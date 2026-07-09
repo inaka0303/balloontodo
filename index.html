@@ -201,17 +201,15 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 #sheet.show{transform:translateY(0)}
 #sheet h2{font-size:16px;margin-bottom:14px}
 #sheet label{display:block;font-size:12px;font-weight:700;color:#7b93a5;margin:14px 0 6px}
-#sheet input[type=text],#sheet select{
-  width:100%;border:2px solid #dbe7ef;border-radius:12px;padding:11px 12px;
+#sheet input[type=text],#sheet input[type=date]{
+  width:100%;max-width:100%;min-width:0;display:block;
+  border:2px solid #dbe7ef;border-radius:12px;padding:11px 12px;
   font-size:16px;font-family:inherit;background:#f7fbfd;color:inherit;outline:none;
+  box-sizing:border-box;color-scheme:light;
 }
-#sheet input:focus,#sheet select:focus{border-color:var(--red)}
-.dateFields{
-  display:grid;grid-template-columns:minmax(92px,1.15fr) auto minmax(66px,.8fr) auto minmax(66px,.8fr) auto;
-  align-items:center;gap:6px;width:100%;
-}
-.dateFields select{min-width:0;padding:11px 8px}
-.dateFields span{font-size:13px;font-weight:700;color:#7b93a5;white-space:nowrap}
+#sheet input:focus{border-color:var(--red)}
+#sheet input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.3em}
+#sheet input[type=date]::-webkit-calendar-picker-indicator{margin-left:4px;padding:0}
 .sizes{display:flex;gap:10px}
 .sizes button{
   flex:1;border:2px solid #dbe7ef;background:#f7fbfd;border-radius:14px;
@@ -305,9 +303,7 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
 }
 @media(max-width:420px){
   #sheet{padding-left:16px;padding-right:16px}
-  .dateFields{grid-template-columns:minmax(82px,1.15fr) auto minmax(58px,.75fr) auto minmax(58px,.75fr) auto;gap:4px}
-  .dateFields select{font-size:15px;padding-left:6px;padding-right:4px}
-  .dateFields span{font-size:12px}
+  #sheet input[type=date]{padding-left:10px;padding-right:10px}
 }
 </style>
 </head>
@@ -357,11 +353,7 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
   </div>
   <div id="dueRow">
     <label>締め切り（近づくほど膨らむ）</label>
-    <div class="dateFields" id="dueFields">
-      <select id="fDueY" aria-label="締め切りの年"></select><span>年</span>
-      <select id="fDueM" aria-label="締め切りの月"></select><span>月</span>
-      <select id="fDueD" aria-label="締め切りの日"></select><span>日</span>
-    </div>
+    <input type="date" id="fDue" aria-label="締め切り" lang="ja">
   </div>
   <button id="saveBtn">とばす 🎈</button>
   <button id="delBtn">この風船を削除する</button>
@@ -1384,95 +1376,9 @@ const veil = document.getElementById('veil');
 const sheet = document.getElementById('sheet');
 const fTitle = document.getElementById('fTitle');
 const fDaily = document.getElementById('fDaily');
-const fDueY = document.getElementById('fDueY');
-const fDueM = document.getElementById('fDueM');
-const fDueD = document.getElementById('fDueD');
+const fDue = document.getElementById('fDue');
 let fImp = 2;
 
-function replaceOptions(select, values, blankLabel){
-  select.textContent = '';
-  const blank = document.createElement('option');
-  blank.value = '';
-  blank.textContent = blankLabel;
-  select.appendChild(blank);
-  values.forEach(value => {
-    const option = document.createElement('option');
-    option.value = String(value);
-    option.textContent = String(value);
-    select.appendChild(option);
-  });
-}
-function setupDueFields(){
-  const year = new Date().getFullYear();
-  const years = [];
-  for(let y=year-3;y<=year+10;y++) years.push(y);
-  replaceOptions(fDueY, years, '----');
-  replaceOptions(fDueM, Array.from({ length: 12 }, (_, i) => i + 1), '--');
-  syncDueDays();
-  fDueY.addEventListener('change', syncDueDays);
-  fDueM.addEventListener('change', syncDueDays);
-}
-function daysInMonth(year, month){
-  return new Date(year, month, 0).getDate();
-}
-function syncDueDays(){
-  const selected = Number(fDueD.value) || 0;
-  const year = Number(fDueY.value) || new Date().getFullYear();
-  const month = Number(fDueM.value) || 1;
-  const max = daysInMonth(year, month);
-  replaceOptions(fDueD, Array.from({ length: max }, (_, i) => i + 1), '--');
-  if(selected) fDueD.value = String(Math.min(selected, max));
-}
-function ensureDueYear(year){
-  if(!year || Array.from(fDueY.options).some(option => option.value === String(year))) return;
-  const option = document.createElement('option');
-  option.value = String(year);
-  option.textContent = String(year);
-  let inserted = false;
-  for(const current of Array.from(fDueY.options).slice(1)){
-    if(Number(current.value) > year){
-      fDueY.insertBefore(option, current);
-      inserted = true;
-      break;
-    }
-  }
-  if(!inserted) fDueY.appendChild(option);
-}
-function setDueValue(value){
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
-  if(!match){
-    fDueY.value = '';
-    fDueM.value = '';
-    syncDueDays();
-    fDueD.value = '';
-    return;
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  ensureDueYear(year);
-  fDueY.value = String(year);
-  fDueM.value = String(month);
-  syncDueDays();
-  fDueD.value = String(day);
-}
-function dueIsPartial(){
-  return !!(fDueY.value || fDueM.value || fDueD.value) && !(fDueY.value && fDueM.value && fDueD.value);
-}
-function getDueValue(){
-  if(!fDueY.value && !fDueM.value && !fDueD.value) return null;
-  if(dueIsPartial()) return null;
-  return [
-    fDueY.value,
-    String(fDueM.value).padStart(2, '0'),
-    String(fDueD.value).padStart(2, '0')
-  ].join('-');
-}
-function focusFirstEmptyDue(){
-  if(!fDueY.value) fDueY.focus();
-  else if(!fDueM.value) fDueM.focus();
-  else fDueD.focus();
-}
 function setImp(v){
   fImp = v;
   document.querySelectorAll('#fSizes button').forEach(b =>
@@ -1492,7 +1398,7 @@ function openSheet(id){
   fTitle.value = t ? t.title : '';
   setImp(t ? t.imp : 2);
   fDaily.checked = t ? !!t.daily : false;
-  setDueValue((t && t.due) ? t.due : '');
+  fDue.value = (t && t.due) ? t.due : '';
   document.getElementById('dueRow').classList.toggle('off', fDaily.checked);
   veil.classList.add('show');
   sheet.classList.add('show');
@@ -1509,12 +1415,7 @@ veil.addEventListener('click', closeSheet);
 document.getElementById('saveBtn').addEventListener('click', () => {
   const title = fTitle.value.trim();
   if(!title){ fTitle.focus(); return; }
-  if(!fDaily.checked && dueIsPartial()){
-    showNotice('締め切りは年・月・日を全部選んでね');
-    focusFirstEmptyDue();
-    return;
-  }
-  const dueValue = fDaily.checked ? null : getDueValue();
+  const dueValue = fDaily.checked ? null : (fDue.value || null);
   if(editingId){
     const t = tasks.find(x => x.id === editingId);
     if(!t){ closeSheet(); render(); return; }
@@ -1564,7 +1465,6 @@ if('serviceWorker' in navigator && location.protocol !== 'file:'){
 }
 
 /* ---------- start ---------- */
-setupDueFields();
 applySky();
 makeClouds();
 render();
