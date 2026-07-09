@@ -52,6 +52,14 @@ header .date{font-size:15px;font-weight:700;letter-spacing:.04em}
 header .headerRight{display:flex;align-items:center;gap:8px;pointer-events:auto}
 header .count{font-size:13px;font-weight:700;color:var(--ink-soft)}
 header .count b{font-size:19px;color:var(--ink);margin:0 2px}
+.music-btn{
+  width:32px;height:32px;border:none;border-radius:50%;
+  background:rgba(255,255,255,.58);color:var(--ink);
+  font-size:17px;font-weight:700;font-family:inherit;line-height:1;
+  box-shadow:0 2px 8px rgba(30,60,90,.12);cursor:pointer;
+  backdrop-filter:blur(8px);
+}
+.music-btn.on{background:#fff1c7;color:#8b6511}
 .sync-btn{
   border:none;border-radius:99px;padding:6px 10px;
   background:rgba(255,255,255,.58);color:var(--ink);
@@ -62,7 +70,7 @@ header .count b{font-size:19px;color:var(--ink);margin:0 2px}
 .sync-btn.ready{background:rgba(255,255,255,.82)}
 .sync-btn.busy{background:#fff1c7;color:#795b13}
 .sync-btn.error{background:#ffe1df;color:var(--red-dark)}
-body.night .sync-btn{background:rgba(20,35,60,.64);color:var(--ink)}
+body.night .sync-btn, body.night .music-btn{background:rgba(20,35,60,.64);color:var(--ink)}
 
 /* ------- sky (balloon field) ------- */
 #sky{position:fixed;inset:0;z-index:1}
@@ -123,6 +131,18 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 .frag{position:absolute;width:12px;height:12px;border-radius:60% 40% 55% 45%;
   z-index:6;pointer-events:none;
   transition:transform .55s cubic-bezier(.15,.7,.3,1),opacity .55s ease}
+.confetti{
+  position:fixed;z-index:8;pointer-events:none;
+  width:9px;height:13px;border-radius:2px;
+  box-shadow:0 1px 3px rgba(0,0,0,.12);
+  transition:transform .9s cubic-bezier(.12,.72,.24,1),opacity .9s ease;
+  will-change:transform,opacity;
+}
+.confetti.star{
+  width:14px;height:14px;border-radius:50%;
+  clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+}
+.confetti.ribbon{width:6px;height:20px;border-radius:99px}
 .popword{position:absolute;z-index:7;pointer-events:none;font-weight:700;
   color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.3);font-size:22px;
   transform:translate(-50%,-50%);animation:popword .6s ease forwards}
@@ -225,6 +245,22 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
   border:none;background:rgba(255,255,255,.18);color:#ffd48a;border-radius:99px;
   padding:6px 14px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;
 }
+#achievementToast{
+  position:fixed;top:calc(58px + env(safe-area-inset-top));left:50%;z-index:12;
+  transform:translate(-50%,-18px) scale(.96);opacity:0;pointer-events:none;
+  width:min(330px,90vw);border-radius:18px;padding:12px 15px;
+  background:rgba(255,255,255,.9);color:#274357;
+  box-shadow:0 10px 28px rgba(30,60,90,.2);
+  display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;
+  transition:opacity .28s ease,transform .28s ease;
+  backdrop-filter:blur(10px);
+}
+#achievementToast.show{opacity:1;transform:translate(-50%,0) scale(1)}
+#achievementToast .badge{font-size:28px;line-height:1}
+#achievementToast .eyebrow{font-size:11px;font-weight:700;color:#d17a21}
+#achievementToast .title{font-size:15px;font-weight:700}
+#achievementToast .desc{font-size:12px;font-weight:700;color:#7b93a5;margin-top:1px}
+body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
 
 @media(min-width:900px){
   header .date{font-size:18px}
@@ -237,6 +273,7 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 <header>
   <div class="date" id="hdrDate"></div>
   <div class="headerRight">
+    <button type="button" class="music-btn" id="musicBtn" title="BGM">♪</button>
     <button type="button" class="sync-btn local" id="syncBtn">ローカル</button>
     <div class="count" id="hdrCount"></div>
   </div>
@@ -280,6 +317,14 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 </div>
 
 <div id="toast"><span class="t" id="toastText"></span><button id="undoBtn">元に戻す</button></div>
+<div id="achievementToast">
+  <div class="badge" id="achBadge">🏆</div>
+  <div>
+    <div class="eyebrow">実績解除</div>
+    <div class="title" id="achTitle"></div>
+    <div class="desc" id="achDesc"></div>
+  </div>
+</div>
 
 <script src="./firebase-config.js"></script>
 <script>
@@ -291,10 +336,13 @@ const store = {
   set(k,v){ try{ localStorage.setItem(k,v); }catch(e){ mem[k]=v; } }
 };
 const KEY = 'fusen.tasks.v1';
+const META_KEY = 'fusen.meta.v1';
+const BGM_KEY = 'fusen.bgm.v1';
 const BACKUP_KEY_PREFIX = 'fusen.tasks.backup.';
 
 /* ---------- state ---------- */
 let tasks = readLocalTasks();
+let meta = readLocalMeta();
 let editingId = null;
 let lastPopped = null;
 let popTimer = null;
@@ -305,6 +353,12 @@ function readLocalTasks(){
 }
 function writeLocalTasks(nextTasks){
   store.set(KEY, JSON.stringify(normalizeTasks(nextTasks)));
+}
+function readLocalMeta(){
+  try{ return normalizeMeta(JSON.parse(store.get(META_KEY) || '{}')); }catch(e){ return normalizeMeta({}); }
+}
+function writeLocalMeta(nextMeta){
+  store.set(META_KEY, JSON.stringify(normalizeMeta(nextMeta)));
 }
 function normalizeTasks(value){
   if(!Array.isArray(value)) return [];
@@ -320,6 +374,24 @@ function normalizeTasks(value){
       doneOn: t.doneOn || null
     }));
 }
+function normalizeMeta(value){
+  const src = value && typeof value === 'object' ? value : {};
+  const achievements = src.achievements && typeof src.achievements === 'object' ? src.achievements : {};
+  const cleanAchievements = {};
+  Object.keys(achievements).forEach(id => {
+    if(achievements[id]) cleanAchievements[id] = achievements[id];
+  });
+  return {
+    totalPops: Math.max(0, Number(src.totalPops) || 0),
+    bigPops: Math.max(0, Number(src.bigPops) || 0),
+    dailyPops: Math.max(0, Number(src.dailyPops) || 0),
+    overduePops: Math.max(0, Number(src.overduePops) || 0),
+    cleanSkyPops: Math.max(0, Number(src.cleanSkyPops) || 0),
+    streakDays: Math.max(0, Number(src.streakDays) || 0),
+    lastPopDate: src.lastPopDate || null,
+    achievements: cleanAchievements
+  };
+}
 function sameTasks(a, b){
   return JSON.stringify(normalizeTasks(a)) === JSON.stringify(normalizeTasks(b));
 }
@@ -329,7 +401,9 @@ function backupLocalTasks(){
 }
 function save(){
   tasks = normalizeTasks(tasks);
+  meta = normalizeMeta(meta);
   writeLocalTasks(tasks);
+  writeLocalMeta(meta);
   queueRemoteSave();
 }
 function todayStr(){
@@ -380,6 +454,7 @@ async function pushTasksNow(){
   try{
     await setDoc(ref, {
       tasks: normalizeTasks(tasks),
+      meta: normalizeMeta(meta),
       updatedAt: serverTimestamp(),
       updatedAtMs: Date.now()
     }, { merge: true });
@@ -389,10 +464,12 @@ async function pushTasksNow(){
     setSyncStatus('同期エラー', 'error');
   }
 }
-function applyRemoteTasks(remoteTasks){
+function applyRemoteState(data){
   syncState.applyingRemote = true;
-  tasks = normalizeTasks(remoteTasks);
+  tasks = normalizeTasks(data && data.tasks);
+  if(data && data.meta) meta = normalizeMeta(data.meta);
   writeLocalTasks(tasks);
+  writeLocalMeta(meta);
   syncState.applyingRemote = false;
   render();
 }
@@ -408,9 +485,11 @@ function attachUser(user){
     if(!syncState.initialSnapshotHandled){
       syncState.initialSnapshotHandled = true;
       if(snap.exists()){
-        const remoteTasks = normalizeTasks(snap.data().tasks);
+        const remoteData = snap.data();
+        const remoteTasks = normalizeTasks(remoteData.tasks);
         if(tasks.length && !sameTasks(tasks, remoteTasks)) backupLocalTasks();
-        applyRemoteTasks(remoteTasks);
+        applyRemoteState(remoteData);
+        if(!remoteData.meta) pushTasksNow();
         setSyncStatus('同期済み', 'ready');
       }else if(tasks.length){
         pushTasksNow();
@@ -420,7 +499,7 @@ function attachUser(user){
       return;
     }
     if(snap.exists()){
-      applyRemoteTasks(snap.data().tasks);
+      applyRemoteState(snap.data());
       setSyncStatus('同期済み', 'ready');
     }
   }, e => {
@@ -658,49 +737,266 @@ window.addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(re
 
 /* ---------- pop ---------- */
 let audioCtx = null;
-function popSound(){
+const musicBtn = document.getElementById('musicBtn');
+const bgm = { on: false, timer: null, gain: null, step: 0 };
+
+function ensureAudio(){
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playTone(freq, start, dur, type, volume, dest){
+  const ctx = ensureAudio();
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(freq, start);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  o.connect(g).connect(dest || ctx.destination);
+  o.start(start);
+  o.stop(start + dur + 0.03);
+}
+function popSound(power){
   try{
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const t = audioCtx.currentTime;
-    // 破裂の「パンッ」: ノイズバースト
-    const len = audioCtx.sampleRate * 0.09;
-    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const ctx = ensureAudio();
+    const t = ctx.currentTime;
+    const burst = Math.min(1.45, 0.75 + power * 0.22);
+    // 高めの「ぱあん！」: 短いノイズを上側へ寄せる
+    const len = ctx.sampleRate * 0.075;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const ch = buf.getChannelData(0);
-    for(let i=0;i<len;i++) ch[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 2.2);
-    const src = audioCtx.createBufferSource(); src.buffer = buf;
-    const bp = audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 900; bp.Q.value = 0.6;
-    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.9, t);
-    src.connect(bp).connect(g).connect(audioCtx.destination);
+    for(let i=0;i<len;i++) ch[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 1.7);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 1200 + power * 260;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 2300 + power * 420; bp.Q.value = 1.4;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.42 * burst, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    src.connect(hp).connect(bp).connect(g).connect(ctx.destination);
     src.start(t);
-    // 低音の「ボンッ」
-    const o = audioCtx.createOscillator(), g2 = audioCtx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(260, t);
-    o.frequency.exponentialRampToValueAtTime(60, t + 0.13);
-    g2.gain.setValueAtTime(0.5, t);
-    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-    o.connect(g2).connect(audioCtx.destination);
-    o.start(t); o.stop(t + 0.18);
+
+    // お祝いのベルを少しだけ足す
+    const notes = [1175, 1480, 1760, 2349];
+    notes.forEach((n, i) => playTone(n, t + 0.035 + i * 0.035, 0.16, 'triangle', 0.045 + power * 0.012));
+    playTone(880 + power * 80, t, 0.11, 'sine', 0.035 + power * 0.01);
   }catch(e){}
 }
+function playUnlockSound(){
+  try{
+    const ctx = ensureAudio();
+    const t = ctx.currentTime;
+    [1047, 1319, 1568, 2093].forEach((n, i) => playTone(n, t + i * 0.055, 0.22, 'triangle', 0.052));
+  }catch(e){}
+}
+function playBgmNote(freq, start, dur, volume){
+  const ctx = ensureAudio();
+  const g = ctx.createGain();
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(1350, start);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(volume, start + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  const o = ctx.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq, start);
+  o.connect(f).connect(g).connect(bgm.gain);
+  o.start(start);
+  o.stop(start + dur + 0.08);
+}
+function scheduleBgmStep(){
+  if(!bgm.on || !bgm.gain) return;
+  const ctx = ensureAudio();
+  const t = ctx.currentTime + 0.05;
+  const chords = [
+    [392, 494, 587, 784],
+    [349, 440, 523, 698],
+    [330, 392, 494, 659],
+    [370, 466, 554, 740]
+  ];
+  const chord = chords[bgm.step % chords.length];
+  chord.forEach((n, i) => playBgmNote(n, t + i * 0.035, 1.25, i === 0 ? 0.028 : 0.02));
+  playBgmNote(chord[3] * 1.5, t + 0.72, 0.34, 0.016);
+  bgm.step++;
+}
+function startBgm(){
+  try{
+    const ctx = ensureAudio();
+    if(bgm.on) return;
+    bgm.gain = ctx.createGain();
+    bgm.gain.gain.setValueAtTime(0.62, ctx.currentTime);
+    bgm.gain.connect(ctx.destination);
+    bgm.on = true;
+    bgm.step = 0;
+    musicBtn.classList.add('on');
+    musicBtn.title = 'BGMを止める';
+    store.set(BGM_KEY, '1');
+    scheduleBgmStep();
+    bgm.timer = setInterval(scheduleBgmStep, 1450);
+  }catch(e){}
+}
+function stopBgm(){
+  if(bgm.timer) clearInterval(bgm.timer);
+  bgm.timer = null;
+  if(bgm.gain){
+    try{
+      const ctx = ensureAudio();
+      bgm.gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      setTimeout(() => { try{ bgm.gain.disconnect(); }catch(e){} bgm.gain = null; }, 240);
+    }catch(e){ bgm.gain = null; }
+  }
+  bgm.on = false;
+  musicBtn.classList.remove('on');
+  musicBtn.title = 'BGM';
+  store.set(BGM_KEY, '0');
+}
+musicBtn.addEventListener('click', () => bgm.on ? stopBgm() : startBgm());
+if(store.get(BGM_KEY) === '1') musicBtn.title = 'BGMを再開';
+
+const ACHIEVEMENTS = {
+  first_pop: { badge:'🎈', title:'はじめてのぱあん！', desc:'最初の風船を割りました' },
+  five_pops: { badge:'✨', title:'軽やかな手ざわり', desc:'風船を5こ割りました' },
+  twenty_pops: { badge:'🎊', title:'空のそうじ名人', desc:'風船を20こ割りました' },
+  big_pop: { badge:'🏵️', title:'大玉割り', desc:'おおきい風船を割りました' },
+  daily_pop: { badge:'🌞', title:'朝のひと押し', desc:'毎日タスクを完了しました' },
+  overdue_pop: { badge:'🔥', title:'巻き返し成功', desc:'期限を過ぎた風船を割りました' },
+  clean_sky: { badge:'🌤️', title:'空っぽの空', desc:'今日見えている風船を全部割りました' },
+  streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました' }
+};
+let achQueue = [];
+let achShowing = false;
+
+function yesterdayStr(){
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function unlockAchievement(id, unlocked){
+  if(meta.achievements[id]) return;
+  meta.achievements[id] = new Date().toISOString();
+  unlocked.push(ACHIEVEMENTS[id]);
+}
+function recordPopStats(task, info){
+  const today = todayStr();
+  if(meta.lastPopDate !== today){
+    meta.streakDays = meta.lastPopDate === yesterdayStr() ? meta.streakDays + 1 : 1;
+    meta.lastPopDate = today;
+  }
+  meta.totalPops++;
+  if(task.imp >= 3) meta.bigPops++;
+  if(task.daily) meta.dailyPops++;
+  if(info.overdue) meta.overduePops++;
+  if(info.cleanSky) meta.cleanSkyPops++;
+
+  const unlocked = [];
+  if(meta.totalPops >= 1) unlockAchievement('first_pop', unlocked);
+  if(meta.totalPops >= 5) unlockAchievement('five_pops', unlocked);
+  if(meta.totalPops >= 20) unlockAchievement('twenty_pops', unlocked);
+  if(meta.bigPops >= 1) unlockAchievement('big_pop', unlocked);
+  if(meta.dailyPops >= 1) unlockAchievement('daily_pop', unlocked);
+  if(meta.overduePops >= 1) unlockAchievement('overdue_pop', unlocked);
+  if(meta.cleanSkyPops >= 1) unlockAchievement('clean_sky', unlocked);
+  if(meta.streakDays >= 3) unlockAchievement('streak3', unlocked);
+  showAchievements(unlocked);
+}
+function showAchievements(items){
+  if(!items.length) return;
+  achQueue = achQueue.concat(items);
+  if(!achShowing) showNextAchievement();
+}
+function showNextAchievement(){
+  const item = achQueue.shift();
+  if(!item){ achShowing = false; return; }
+  achShowing = true;
+  document.getElementById('achBadge').textContent = item.badge;
+  document.getElementById('achTitle').textContent = item.title;
+  document.getElementById('achDesc').textContent = item.desc;
+  const box = document.getElementById('achievementToast');
+  box.classList.add('show');
+  playUnlockSound();
+  setTimeout(() => {
+    box.classList.remove('show');
+    setTimeout(showNextAchievement, 420);
+  }, 2600);
+}
+function celebrationPower(task, d, cleanSky){
+  let power = Math.max(task.imp || 1, Math.round(d / 46) - 1);
+  if(cleanSky) power++;
+  return Math.max(1, Math.min(5, power));
+}
+function burstConfetti(x, y, power){
+  const colors = ['#ff5d57','#ffb13d','#ffe66d','#55d6a7','#43b4ff','#b66cff','#ffffff'];
+  const count = 18 + power * 18;
+  for(let i=0;i<count;i++){
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    if(i % 9 === 0) c.classList.add('star');
+    else if(i % 5 === 0) c.classList.add('ribbon');
+    c.style.left = x + 'px';
+    c.style.top = y + 'px';
+    c.style.background = colors[Math.floor(Math.random() * colors.length)];
+    c.style.opacity = '1';
+    document.body.appendChild(c);
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 70 + Math.random() * (80 + power * 28);
+    const tx = Math.cos(ang) * dist;
+    const ty = Math.sin(ang) * dist * .55 - 45 - Math.random() * (45 + power * 18);
+    const rot = (Math.random() * 720 + 180) * (Math.random() > .5 ? 1 : -1);
+    const scale = .72 + Math.random() * .55;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      c.style.transform = `translate(${tx}px,${ty + 80 + power * 18}px) rotate(${rot}deg) scale(${scale})`;
+      c.style.opacity = '0';
+    }));
+    setTimeout(() => c.remove(), 1050);
+  }
+  if(power >= 4) rainConfetti(power);
+}
+function rainConfetti(power){
+  const colors = ['#ff5d57','#ffb13d','#ffe66d','#55d6a7','#43b4ff','#b66cff'];
+  const count = 16 + power * 7;
+  for(let i=0;i<count;i++){
+    const c = document.createElement('div');
+    c.className = 'confetti ribbon';
+    c.style.left = (Math.random() * 100) + 'vw';
+    c.style.top = (-20 - Math.random() * 80) + 'px';
+    c.style.background = colors[Math.floor(Math.random() * colors.length)];
+    document.body.appendChild(c);
+    const tx = -50 + Math.random() * 100;
+    const ty = window.innerHeight * (.45 + Math.random() * .45);
+    const rot = Math.random() * 900;
+    c.style.transitionDuration = (1.15 + Math.random() * .45) + 's';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      c.style.transform = `translate(${tx}px,${ty}px) rotate(${rot}deg)`;
+      c.style.opacity = '0';
+    }));
+    setTimeout(() => c.remove(), 1700);
+  }
+}
 function pop(task, el){
+  if((task.daily && task.doneOn === todayStr()) || (!task.daily && task.done)) return;
   if(navigator.vibrate) navigator.vibrate(35);
-  popSound();
-  // 破片
+  const d = diameter(task);
+  const willBeOverdue = !task.daily && task.due && daysLeft(task.due) < 0;
   const x = el.offsetLeft, y = el.offsetTop;
+  const power = celebrationPower(task, d, false);
+  popSound(power);
+  burstConfetti(x, y, power);
+
+  // 破片
   const c2 = getComputedStyle(el).getPropertyValue('--c1') || 'var(--red)';
-  const words = ['パンッ！','えらい！','完了！','やった！','ナイス！'];
+  const words = ['ぱあん！','お祝い！','完了！','やった！','ナイス！','すっきり！'];
   const w = document.createElement('div');
   w.className = 'popword'; w.textContent = words[Math.floor(Math.random()*words.length)];
   w.style.left = x+'px'; w.style.top = y+'px';
   sky.appendChild(w); setTimeout(()=>w.remove(), 650);
-  for(let i=0;i<12;i++){
+  for(let i=0;i<10 + power * 4;i++){
     const f = document.createElement('div');
     f.className = 'frag';
     f.style.background = i%3 ? c2 : '#fff';
     f.style.left = x+'px'; f.style.top = y+'px';
     sky.appendChild(f);
-    const ang = Math.random()*Math.PI*2, dist = 50 + Math.random()*90;
+    const ang = Math.random()*Math.PI*2, dist = 50 + Math.random()*(85 + power * 18);
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       f.style.transform = `translate(${Math.cos(ang)*dist}px,${Math.sin(ang)*dist + 30}px) rotate(${Math.random()*360}deg) scale(.3)`;
       f.style.opacity = '0';
@@ -712,6 +1008,9 @@ function pop(task, el){
   // 完了マーク
   if(task.daily) task.doneOn = todayStr();
   else task.done = true;
+  const cleanSky = visibleTasks().length === 0;
+  if(cleanSky) burstConfetti(x, y, Math.min(5, power + 1));
+  recordPopStats(task, { overdue: willBeOverdue, cleanSky });
   save();
 
   // undo トースト
