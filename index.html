@@ -201,15 +201,32 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 #sheet.show{transform:translateY(0)}
 #sheet h2{font-size:16px;margin-bottom:14px}
 #sheet label{display:block;font-size:12px;font-weight:700;color:#7b93a5;margin:14px 0 6px}
-#sheet input[type=text],#sheet input[type=date]{
+#sheet input[type=text]{
   width:100%;max-width:100%;min-width:0;display:block;
   border:2px solid #dbe7ef;border-radius:12px;padding:11px 12px;
   font-size:16px;font-family:inherit;background:#f7fbfd;color:inherit;outline:none;
   box-sizing:border-box;color-scheme:light;
 }
 #sheet input:focus{border-color:var(--red)}
-#sheet input[type=date]::-webkit-date-and-time-value{text-align:left;min-height:1.3em}
-#sheet input[type=date]::-webkit-calendar-picker-indicator{margin-left:4px;padding:0}
+.datePickerField{
+  position:relative;width:100%;max-width:100%;min-width:0;overflow:hidden;border-radius:12px;
+}
+.datePickerField input[type=date]{
+  position:absolute;inset:0;z-index:2;width:100%;height:100%;
+  opacity:0;cursor:pointer;border:0;padding:0;margin:0;
+  font-size:16px;-webkit-appearance:none;appearance:none;
+}
+.datePickerDisplay{
+  width:100%;min-height:48px;border:2px solid #dbe7ef;border-radius:12px;
+  padding:11px 12px;box-sizing:border-box;background:#f7fbfd;color:#274357;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  font-size:16px;font-weight:700;pointer-events:none;
+}
+.datePickerField:focus-within .datePickerDisplay{border-color:var(--red)}
+.datePickerText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.datePickerIcon{flex:none;color:#7b93a5;font-size:17px;line-height:1}
+.datePickerArrow{flex:none;color:#7b93a5;font-size:13px;line-height:1}
+.datePickerField:not(.hasValue) .datePickerText{color:#7b93a5}
 .sizes{display:flex;gap:10px}
 .sizes button{
   flex:1;border:2px solid #dbe7ef;background:#f7fbfd;border-radius:14px;
@@ -303,7 +320,7 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
 }
 @media(max-width:420px){
   #sheet{padding-left:16px;padding-right:16px}
-  #sheet input[type=date]{padding-left:10px;padding-right:10px}
+  .datePickerDisplay{padding-left:10px;padding-right:10px}
 }
 </style>
 </head>
@@ -353,7 +370,14 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
   </div>
   <div id="dueRow">
     <label>締め切り（近づくほど膨らむ）</label>
-    <input type="date" id="fDue" aria-label="締め切り" lang="ja">
+    <div class="datePickerField" id="duePicker">
+      <input type="date" id="fDue" aria-label="締め切り" lang="ja">
+      <div class="datePickerDisplay" aria-hidden="true">
+        <span class="datePickerIcon">📅</span>
+        <span class="datePickerText" id="fDueText">日付を選ぶ</span>
+        <span class="datePickerArrow">▼</span>
+      </div>
+    </div>
   </div>
   <button id="saveBtn">とばす 🎈</button>
   <button id="delBtn">この風船を削除する</button>
@@ -1377,8 +1401,19 @@ const sheet = document.getElementById('sheet');
 const fTitle = document.getElementById('fTitle');
 const fDaily = document.getElementById('fDaily');
 const fDue = document.getElementById('fDue');
+const duePicker = document.getElementById('duePicker');
+const fDueText = document.getElementById('fDueText');
 let fImp = 2;
 
+function formatDueText(value){
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if(!match) return '日付を選ぶ';
+  return `${Number(match[1])}年${Number(match[2])}月${Number(match[3])}日`;
+}
+function updateDuePicker(){
+  fDueText.textContent = formatDueText(fDue.value);
+  duePicker.classList.toggle('hasValue', !!fDue.value);
+}
 function setImp(v){
   fImp = v;
   document.querySelectorAll('#fSizes button').forEach(b =>
@@ -1388,6 +1423,8 @@ document.querySelectorAll('#fSizes button').forEach(b =>
   b.addEventListener('click', () => setImp(Number(b.dataset.v))));
 fDaily.addEventListener('change', () =>
   document.getElementById('dueRow').classList.toggle('off', fDaily.checked));
+fDue.addEventListener('input', updateDuePicker);
+fDue.addEventListener('change', updateDuePicker);
 
 function openSheet(id){
   editingId = id || null;
@@ -1399,6 +1436,7 @@ function openSheet(id){
   setImp(t ? t.imp : 2);
   fDaily.checked = t ? !!t.daily : false;
   fDue.value = (t && t.due) ? t.due : '';
+  updateDuePicker();
   document.getElementById('dueRow').classList.toggle('off', fDaily.checked);
   veil.classList.add('show');
   sheet.classList.add('show');
