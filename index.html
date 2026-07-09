@@ -361,7 +361,9 @@ function normalizeTasks(value){
       daily: !!t.daily,
       due: t.due || null,
       done: !!t.done,
-      doneOn: t.doneOn || null
+      doneOn: t.doneOn || null,
+      createdAt: Number(t.createdAt) || Date.now(),
+      completedAt: t.completedAt || null
     }));
 }
 function normalizeMeta(value){
@@ -377,8 +379,19 @@ function normalizeMeta(value){
     dailyPops: Math.max(0, Number(src.dailyPops) || 0),
     overduePops: Math.max(0, Number(src.overduePops) || 0),
     cleanSkyPops: Math.max(0, Number(src.cleanSkyPops) || 0),
+    quickPops: Math.max(0, Number(src.quickPops) || 0),
+    stalePops: Math.max(0, Number(src.stalePops) || 0),
+    dueTodayPops: Math.max(0, Number(src.dueTodayPops) || 0),
+    noDuePops: Math.max(0, Number(src.noDuePops) || 0),
+    smallPops: Math.max(0, Number(src.smallPops) || 0),
     streakDays: Math.max(0, Number(src.streakDays) || 0),
     lastPopDate: src.lastPopDate || null,
+    timePops: {
+      morning: Math.max(0, Number(src.timePops && src.timePops.morning) || 0),
+      noon: Math.max(0, Number(src.timePops && src.timePops.noon) || 0),
+      night: Math.max(0, Number(src.timePops && src.timePops.night) || 0),
+      midnight: Math.max(0, Number(src.timePops && src.timePops.midnight) || 0)
+    },
     achievements: cleanAchievements
   };
 }
@@ -782,11 +795,26 @@ const ACHIEVEMENTS = {
   first_pop: { badge:'🎈', title:'はじめてのぱあん！', desc:'最初の風船を割りました' },
   five_pops: { badge:'✨', title:'軽やかな手ざわり', desc:'風船を5こ割りました' },
   twenty_pops: { badge:'🎊', title:'空のそうじ名人', desc:'風船を20こ割りました' },
+  fifty_pops: { badge:'🏅', title:'ぱあん職人', desc:'風船を50こ割りました' },
+  hundred_pops: { badge:'💯', title:'百発百中', desc:'風船を100こ割りました' },
+  three_hundred_pops: { badge:'🎆', title:'空の花火師', desc:'風船を300こ割りました' },
   big_pop: { badge:'🏵️', title:'大玉割り', desc:'おおきい風船を割りました' },
+  small_pop: { badge:'🫧', title:'ちいさな一歩', desc:'ちいさい風船を割りました' },
   daily_pop: { badge:'🌞', title:'朝のひと押し', desc:'毎日タスクを完了しました' },
   overdue_pop: { badge:'🔥', title:'巻き返し成功', desc:'期限を過ぎた風船を割りました' },
+  due_today_pop: { badge:'⏰', title:'当日回収', desc:'締め切り当日の風船を割りました' },
+  no_due_pop: { badge:'🪁', title:'自由気球', desc:'締め切りなしの風船を割りました' },
+  instant_pop: { badge:'⚡', title:'作って即ぱあん', desc:'作ってから1分以内に割りました' },
+  stale_pop: { badge:'🧵', title:'ゴム劣化', desc:'30日以上浮かんだ風船を割りました' },
+  morning_pop: { badge:'🌅', title:'朝割り', desc:'朝に風船を割りました' },
+  noon_pop: { badge:'🍱', title:'昼割り', desc:'昼に風船を割りました' },
+  night_pop: { badge:'🌙', title:'夜割り', desc:'夜に風船を割りました' },
+  midnight_pop: { badge:'🛌', title:'深夜割り', desc:'深夜に風船を割りました' },
+  all_times_pop: { badge:'🕰️', title:'一日全天候', desc:'朝・昼・夜・深夜に割りました' },
   clean_sky: { badge:'🌤️', title:'空っぽの空', desc:'今日見えている風船を全部割りました' },
-  streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました' }
+  clean_sky5: { badge:'🧹', title:'空の整備士', desc:'空っぽの空を5回作りました' },
+  streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました' },
+  streak7: { badge:'🌿', title:'一週間の風', desc:'7日続けて風船を割りました' }
 };
 let achQueue = [];
 let achShowing = false;
@@ -801,6 +829,12 @@ function unlockAchievement(id, unlocked){
   meta.achievements[id] = new Date().toISOString();
   unlocked.push(ACHIEVEMENTS[id]);
 }
+function timeBand(hour){
+  if(hour >= 5 && hour < 11) return 'morning';
+  if(hour >= 11 && hour < 17) return 'noon';
+  if(hour >= 17 && hour < 24) return 'night';
+  return 'midnight';
+}
 function recordPopStats(task, info){
   const today = todayStr();
   if(meta.lastPopDate !== today){
@@ -809,19 +843,42 @@ function recordPopStats(task, info){
   }
   meta.totalPops++;
   if(task.imp >= 3) meta.bigPops++;
+  if(task.imp <= 1) meta.smallPops++;
   if(task.daily) meta.dailyPops++;
   if(info.overdue) meta.overduePops++;
+  if(info.dueToday) meta.dueTodayPops++;
+  if(info.noDue) meta.noDuePops++;
+  if(info.quick) meta.quickPops++;
+  if(info.stale) meta.stalePops++;
   if(info.cleanSky) meta.cleanSkyPops++;
+  if(info.band) meta.timePops[info.band]++;
 
   const unlocked = [];
   if(meta.totalPops >= 1) unlockAchievement('first_pop', unlocked);
   if(meta.totalPops >= 5) unlockAchievement('five_pops', unlocked);
   if(meta.totalPops >= 20) unlockAchievement('twenty_pops', unlocked);
+  if(meta.totalPops >= 50) unlockAchievement('fifty_pops', unlocked);
+  if(meta.totalPops >= 100) unlockAchievement('hundred_pops', unlocked);
+  if(meta.totalPops >= 300) unlockAchievement('three_hundred_pops', unlocked);
   if(meta.bigPops >= 1) unlockAchievement('big_pop', unlocked);
+  if(meta.smallPops >= 1) unlockAchievement('small_pop', unlocked);
   if(meta.dailyPops >= 1) unlockAchievement('daily_pop', unlocked);
   if(meta.overduePops >= 1) unlockAchievement('overdue_pop', unlocked);
+  if(meta.dueTodayPops >= 1) unlockAchievement('due_today_pop', unlocked);
+  if(meta.noDuePops >= 1) unlockAchievement('no_due_pop', unlocked);
+  if(meta.quickPops >= 1) unlockAchievement('instant_pop', unlocked);
+  if(meta.stalePops >= 1) unlockAchievement('stale_pop', unlocked);
+  if(meta.timePops.morning >= 1) unlockAchievement('morning_pop', unlocked);
+  if(meta.timePops.noon >= 1) unlockAchievement('noon_pop', unlocked);
+  if(meta.timePops.night >= 1) unlockAchievement('night_pop', unlocked);
+  if(meta.timePops.midnight >= 1) unlockAchievement('midnight_pop', unlocked);
+  if(meta.timePops.morning && meta.timePops.noon && meta.timePops.night && meta.timePops.midnight){
+    unlockAchievement('all_times_pop', unlocked);
+  }
   if(meta.cleanSkyPops >= 1) unlockAchievement('clean_sky', unlocked);
+  if(meta.cleanSkyPops >= 5) unlockAchievement('clean_sky5', unlocked);
   if(meta.streakDays >= 3) unlockAchievement('streak3', unlocked);
+  if(meta.streakDays >= 7) unlockAchievement('streak7', unlocked);
   showAchievements(unlocked);
 }
 function showAchievements(items){
@@ -901,7 +958,12 @@ function pop(task, el){
   if((task.daily && task.doneOn === todayStr()) || (!task.daily && task.done)) return;
   if(navigator.vibrate) navigator.vibrate(35);
   const d = diameter(task);
-  const willBeOverdue = !task.daily && task.due && daysLeft(task.due) < 0;
+  const now = Date.now();
+  const ageMs = now - (Number(task.createdAt) || now);
+  const dueDelta = !task.daily && task.due ? daysLeft(task.due) : null;
+  const willBeOverdue = dueDelta !== null && dueDelta < 0;
+  const willBeDueToday = dueDelta === 0;
+  const band = timeBand(new Date().getHours());
   const x = el.offsetLeft, y = el.offsetTop;
   const power = celebrationPower(task, d, false);
   popSound(power);
@@ -930,11 +992,20 @@ function pop(task, el){
   el.remove();
 
   // 完了マーク
+  task.completedAt = new Date(now).toISOString();
   if(task.daily) task.doneOn = todayStr();
   else task.done = true;
   const cleanSky = visibleTasks().length === 0;
   if(cleanSky) burstConfetti(x, y, Math.min(5, power + 1));
-  recordPopStats(task, { overdue: willBeOverdue, cleanSky });
+  recordPopStats(task, {
+    overdue: willBeOverdue,
+    dueToday: willBeDueToday,
+    noDue: !task.daily && !task.due,
+    quick: ageMs <= 60000,
+    stale: ageMs >= 30 * 86400000,
+    cleanSky,
+    band
+  });
   save();
 
   // undo トースト
@@ -954,6 +1025,7 @@ document.getElementById('undoBtn').addEventListener('click', () => {
   if(lastPopped){
     if(lastPopped.daily) lastPopped.doneOn = null;
     else lastPopped.done = false;
+    lastPopped.completedAt = null;
     save();
   }
   lastPopped = null;
@@ -1016,7 +1088,9 @@ document.getElementById('saveBtn').addEventListener('click', () => {
       id: uid(), title, imp: fImp,
       daily: fDaily.checked,
       due: fDaily.checked ? null : (fDue.value || null),
-      done: false, doneOn: null
+      done: false, doneOn: null,
+      createdAt: Date.now(),
+      completedAt: null
     });
   }
   save(); closeSheet(); render();
