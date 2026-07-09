@@ -792,29 +792,29 @@ function playUnlockSound(){
 }
 
 const ACHIEVEMENTS = {
-  first_pop: { badge:'🎈', title:'はじめてのぱあん！', desc:'最初の風船を割りました。いい音、しましたね。' },
+  first_pop: { badge:'🎈', title:'初割り', desc:'最初の風船を割りました。いい音、しましたね。' },
   five_pops: { badge:'✨', title:'軽やかな手ざわり', desc:'風船を5こ割りました。だんだん職人の手つき。' },
   twenty_pops: { badge:'🎊', title:'空のそうじ名人', desc:'風船を20こ割りました。空がだいぶ広くなった。' },
-  fifty_pops: { badge:'🏅', title:'ぱあん職人', desc:'風船を50こ割りました。もう割る前から音が聞こえる。' },
-  hundred_pops: { badge:'💯', title:'百発百中', desc:'風船を100こ割りました。これはもう日課というより芸。' },
+  fifty_pops: { badge:'🏅', title:'割り職人', desc:'風船を50こ割りました。もう割る前から音が聞こえる。' },
+  hundred_pops: { badge:'💯', title:'百発百中', desc:'風船を100こ割りました。ナイスエイム。' },
   three_hundred_pops: { badge:'🎆', title:'空の花火師', desc:'風船を300こ割りました。今日の空、だいぶ派手です。' },
-  big_pop: { badge:'🏵️', title:'大玉割り', desc:'おおきい風船を割りました。存在感ごと片づけた。' },
+  big_pop: { badge:'🏵️', title:'大玉割り', desc:'おおきい風船を割りました。派手に割れたねえ。' },
   small_pop: { badge:'🫧', title:'ちいさな一歩', desc:'ちいさい風船を割りました。小さくても前進は前進。' },
-  daily_pop: { badge:'🌞', title:'朝のひと押し', desc:'毎日タスクを完了しました。今日の自分に先手を打った。' },
-  overdue_pop: { badge:'🔥', title:'巻き返し成功', desc:'期限を過ぎた風船を割りました。延滞からの生還。' },
-  due_today_pop: { badge:'⏰', title:'当日回収', desc:'締め切り当日の風船を割りました。ギリギリを制する者。' },
-  no_due_pop: { badge:'🪁', title:'自由気球', desc:'締め切りなしの風船を割りました。自由にも区切りは必要。' },
+  daily_pop: { badge:'🌞', title:'今日のルーティーン', desc:'毎日タスクを完了しました。えらい！' },
+  overdue_pop: { badge:'🔥', title:'巻き返し成功', desc:'期限を過ぎた風船を割りました。まだ間に合う。' },
+  due_today_pop: { badge:'⏰', title:'当日回収', desc:'締め切り当日の風船を割りました。夏休み最終日に課題終わらすタイプでしょ。' },
+  no_due_pop: { badge:'🪁', title:'自由気球', desc:'締め切りなしの風船を割りました。期限がないものほど大事だったりするよね。' },
   instant_pop: { badge:'⚡', title:'作って即ぱあん', desc:'作ってから1分以内に割りました。ふうせん飛ばす意味あった？笑' },
   stale_pop: { badge:'🧵', title:'ゴム劣化', desc:'30日以上浮かんだ風船を割りました。熟成させすぎです。' },
-  morning_pop: { badge:'🌅', title:'朝割り', desc:'朝に風船を割りました。起き抜けの一撃、いい感じ。' },
-  noon_pop: { badge:'🍱', title:'昼割り', desc:'昼に風船を割りました。休憩前にひとつ減らすの、えらい。' },
-  night_pop: { badge:'🌙', title:'夜割り', desc:'夜に風船を割りました。今日の自分に回収班が来た。' },
+  morning_pop: { badge:'🌅', title:'朝割り', desc:'朝に風船を割りました。目覚めた？' },
+  noon_pop: { badge:'🍱', title:'昼割り', desc:'昼に風船を割りました。そろそろ眠くなってきた？' },
+  night_pop: { badge:'🌙', title:'夜割り', desc:'夜に風船を割りました。近所迷惑じゃない？' },
   midnight_pop: { badge:'🛌', title:'深夜割り', desc:'深夜に風船を割りました。夜更かししすぎじゃない？' },
-  all_times_pop: { badge:'🕰️', title:'一日全天候', desc:'朝・昼・夜・深夜に割りました。生活リズムが全方位。' },
+  all_times_pop: { badge:'🕰️', title:'一日全天候', desc:'朝・昼・夜・深夜に割りました。君いつ寝てるの？' },
   clean_sky: { badge:'🌤️', title:'空っぽの空', desc:'今日見えている風船を全部割りました。視界、良好。' },
-  clean_sky5: { badge:'🧹', title:'空の整備士', desc:'空っぽの空を5回作りました。片づけの才能が浮いている。' },
-  streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました。三日坊主を越えた。' },
-  streak7: { badge:'🌿', title:'一週間の風', desc:'7日続けて風船を割りました。これはもう習慣の入口。' }
+  clean_sky5: { badge:'🧹', title:'空の整備士', desc:'空っぽの空を5回作りました。すっきりしたね。' },
+  streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました。三日坊主脱却。' },
+  streak7: { badge:'🌿', title:'一週間の風', desc:'7日続けて風船を割りました。習慣化するには66日かかるらしいよ。' }
 };
 let achQueue = [];
 let achShowing = false;
