@@ -1414,6 +1414,12 @@ function updateDuePicker(){
   fDueText.textContent = formatDueText(fDue.value);
   duePicker.classList.toggle('hasValue', !!fDue.value);
 }
+function openDuePicker(){
+  try{ fDue.focus({ preventScroll: true }); }catch(e){ fDue.focus(); }
+  if(typeof fDue.showPicker === 'function'){
+    try{ fDue.showPicker(); }catch(e){}
+  }
+}
 function setImp(v){
   fImp = v;
   document.querySelectorAll('#fSizes button').forEach(b =>
@@ -1425,6 +1431,7 @@ fDaily.addEventListener('change', () =>
   document.getElementById('dueRow').classList.toggle('off', fDaily.checked));
 fDue.addEventListener('input', updateDuePicker);
 fDue.addEventListener('change', updateDuePicker);
+duePicker.addEventListener('click', openDuePicker);
 
 function openSheet(id){
   editingId = id || null;
