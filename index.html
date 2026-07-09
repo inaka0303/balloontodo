@@ -731,6 +731,8 @@ function makeClouds(){
 
 /* ---------- balloon sizing ---------- */
 const BALLOON_COLLISION_SCALE = .58;
+const BALLOON_GAP_SCALE = 1.04;
+const BALLOON_LAYOUT_ITERATIONS = 90;
 
 function daysLeft(due){
   const [y,m,d] = due.split('-').map(Number);
@@ -846,6 +848,72 @@ function buildBalloon(task){
 }
 
 /* ---------- layout: なるべく重ならないように配置 ---------- */
+function bodyBounds(b, W, H, topPad, botPad){
+  const minX = b.r + 6, maxX = W - b.r - 6;
+  const minY = topPad + b.r, maxY = Math.max(minY, H - botPad - b.r * 1.28);
+  return { minX, maxX, minY, maxY };
+}
+function clampBodyPosition(b, W, H, topPad, botPad){
+  const bounds = bodyBounds(b, W, H, topPad, botPad);
+  b.x = clampNumber(b.x, bounds.minX, bounds.maxX);
+  b.y = clampNumber(b.y, bounds.minY, bounds.maxY);
+}
+function settleInitialLayout(bodies, W, H, topPad, botPad){
+  if(bodies.length < 2) return;
+  for(let step=0;step<BALLOON_LAYOUT_ITERATIONS;step++){
+    let moved = 0;
+    for(let i=0;i<bodies.length;i++){
+      for(let j=i+1;j<bodies.length;j++){
+        const a = bodies[i], b = bodies[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist = Math.hypot(dx, dy);
+        if(dist < .001){
+          const angle = Math.random() * Math.PI * 2;
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          dist = 1;
+        }
+        const minDist = (a.r + b.r) * BALLOON_GAP_SCALE;
+        if(dist >= minDist) continue;
+        const nx = dx / dist, ny = dy / dist;
+        const overlap = minDist - dist;
+        const invA = 1 / a.mass, invB = 1 / b.mass;
+        const invSum = invA + invB;
+        const push = overlap * .72;
+        a.x -= nx * push * (invA / invSum);
+        a.y -= ny * push * (invA / invSum);
+        b.x += nx * push * (invB / invSum);
+        b.y += ny * push * (invB / invSum);
+        moved = Math.max(moved, overlap);
+      }
+    }
+    for(const b of bodies) clampBodyPosition(b, W, H, topPad, botPad);
+    if(moved < .35) break;
+  }
+  for(const b of bodies){
+    b.vx = b.vx * .35 + (Math.random() - .5) * .06;
+    b.vy = b.vy * .35 + (Math.random() - .5) * .04;
+  }
+}
+function placementGapScore(x, y, r, placed){
+  let worst = Infinity;
+  for(const p of placed){
+    const gap = Math.hypot(x-p.x, y-p.y) - (r + p.r) * BALLOON_GAP_SCALE;
+    worst = Math.min(worst, gap);
+  }
+  return worst;
+}
+function findOpenPlacement(r, xMin, xMax, yMin, yMax, placed){
+  let best = null;
+  for(let i=0;i<140;i++){
+    const x = xMin + Math.random() * Math.max(1, xMax - xMin);
+    const y = yMin + Math.random() * Math.max(1, yMax - yMin);
+    const score = placementGapScore(x, y, r, placed);
+    if(score >= 0) return { x, y, s: score };
+    if(!best || score > best.s) best = { x, y, s: score };
+  }
+  return best || { x: (xMin + xMax) / 2, y: (yMin + yMax) / 2, s: -Infinity };
+}
 function layout(items){
   const W = sky.clientWidth, H = sky.clientHeight;
   const topPad = 70, botPad = 130;
@@ -860,25 +928,13 @@ function layout(items){
     if(saved){
       const scaledX = saved.w ? saved.x * (W / saved.w) : saved.x;
       const scaledY = saved.h ? saved.y * (H / saved.h) : saved.y;
-      best = {
-        x: clampNumber(scaledX, xMin, xMax),
-        y: clampNumber(scaledY, yMin, yMax),
-        s: 0,
-        saved: true
-      };
-    }else{
-      for(let i=0;i<90;i++){
-        const x = xMin + Math.random() * Math.max(1, xMax - xMin);
-        const y = yMin + Math.random() * Math.max(1, yMax - yMin);
-        let ok = true, worst = Infinity;
-        for(const p of placed){
-          const gap = Math.hypot(x-p.x, y-p.y) - (r + p.r) * 1.02;
-          if(gap < 0){ ok = false; worst = Math.min(worst, gap); }
-        }
-        if(ok){ best = {x, y, s: 0}; break; }
-        if(!best || worst > best.s) best = {x, y, s: worst};
-      }
+      const x = clampNumber(scaledX, xMin, xMax);
+      const y = clampNumber(scaledY, yMin, yMax);
+      const savedScore = placementGapScore(x, y, r, placed);
+      if(savedScore > -Math.max(10, r * .16)) best = { x, y, s: savedScore, saved: true };
     }
+    if(!best) best = findOpenPlacement(r, xMin, xMax, yMin, yMax, placed);
+    const usedSaved = !!best.saved;
     const speedScale = clampNumber(104 / Math.max(80, r), .58, 1.15);
     const body = {
       task: it.task,
@@ -886,8 +942,8 @@ function layout(items){
       x: best.x,
       y: best.y,
       r,
-      vx: saved ? saved.vx + (Math.random() - .5) * .08 : (Math.random() - .5) * .44,
-      vy: saved ? saved.vy + (Math.random() - .5) * .06 : (Math.random() - .5) * .28,
+      vx: usedSaved ? saved.vx + (Math.random() - .5) * .08 : (Math.random() - .5) * .44,
+      vy: usedSaved ? saved.vy + (Math.random() - .5) * .06 : (Math.random() - .5) * .28,
       mass: r * r,
       phase: Math.random() * Math.PI * 2,
       altPhase: Math.random() * Math.PI * 2,
@@ -900,8 +956,11 @@ function layout(items){
       maxSpeed: (.42 + Math.random() * .46) * speedScale
     };
     placed.push(body);
-    it.el.style.left = best.x + 'px';
-    it.el.style.top  = best.y + 'px';
+  }
+  settleInitialLayout(placed, W, H, topPad, botPad);
+  for(const b of placed){
+    b.el.style.left = b.x.toFixed(1) + 'px';
+    b.el.style.top = b.y.toFixed(1) + 'px';
   }
   startBalloonPhysics(placed);
 }
@@ -909,6 +968,7 @@ function startBalloonPhysics(bodies){
   physicsBodies = bodies;
   if(!physicsBodies.length) return;
   let last = performance.now();
+  const started = last;
   const tick = now => {
     const dt = Math.min(2, Math.max(.5, (now - last) / 16.67));
     last = now;
@@ -935,34 +995,36 @@ function startBalloonPhysics(bodies){
       }
       b.x += b.vx * dt;
       b.y += b.vy * dt;
-      const minX = b.r + 6, maxX = W - b.r - 6;
-      const minY = topPad + b.r, maxY = Math.max(minY, H - botPad - b.r * 1.28);
-      if(b.x < minX){ b.x = minX; b.vx = Math.abs(b.vx) * .76; }
-      if(b.x > maxX){ b.x = maxX; b.vx = -Math.abs(b.vx) * .76; }
-      if(b.y < minY){ b.y = minY; b.vy = Math.abs(b.vy) * .72; }
-      if(b.y > maxY){ b.y = maxY; b.vy = -Math.abs(b.vy) * .72; }
+      const bounds = bodyBounds(b, W, H, topPad, botPad);
+      if(b.x < bounds.minX){ b.x = bounds.minX; b.vx = Math.abs(b.vx) * .76; }
+      if(b.x > bounds.maxX){ b.x = bounds.maxX; b.vx = -Math.abs(b.vx) * .76; }
+      if(b.y < bounds.minY){ b.y = bounds.minY; b.vy = Math.abs(b.vy) * .72; }
+      if(b.y > bounds.maxY){ b.y = bounds.maxY; b.vy = -Math.abs(b.vy) * .72; }
     }
 
+    const warmup = Math.min(1, Math.max(0, (now - started) / 900));
+    const correctionStrength = .42 + warmup * .52;
+    const impulseStrength = .35 + warmup * .65;
     for(let i=0;i<physicsBodies.length;i++){
       for(let j=i+1;j<physicsBodies.length;j++){
         const a = physicsBodies[i], b = physicsBodies[j];
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.hypot(dx, dy) || .001;
-        const minDist = (a.r + b.r) * 1.02;
+        const minDist = (a.r + b.r) * BALLOON_GAP_SCALE;
         if(dist >= minDist) continue;
         const nx = dx / dist, ny = dy / dist;
         const overlap = minDist - dist;
         const invA = 1 / a.mass, invB = 1 / b.mass;
         const invSum = invA + invB;
-        a.x -= nx * overlap * (invA / invSum) * .94;
-        a.y -= ny * overlap * (invA / invSum) * .94;
-        b.x += nx * overlap * (invB / invSum) * .94;
-        b.y += ny * overlap * (invB / invSum) * .94;
+        a.x -= nx * overlap * (invA / invSum) * correctionStrength;
+        a.y -= ny * overlap * (invA / invSum) * correctionStrength;
+        b.x += nx * overlap * (invB / invSum) * correctionStrength;
+        b.y += ny * overlap * (invB / invSum) * correctionStrength;
 
         const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
         const closing = rvx * nx + rvy * ny;
         if(closing < .08){
-          const impulse = (-(1.28) * closing + .022) / invSum;
+          const impulse = ((-(1.28) * closing + .022) / invSum) * impulseStrength;
           a.vx -= impulse * invA * nx;
           a.vy -= impulse * invA * ny;
           b.vx += impulse * invB * nx;
@@ -972,10 +1034,7 @@ function startBalloonPhysics(bodies){
     }
 
     for(const b of physicsBodies){
-      const minX = b.r + 6, maxX = W - b.r - 6;
-      const minY = topPad + b.r, maxY = Math.max(minY, H - botPad - b.r * 1.28);
-      b.x = clampNumber(b.x, minX, maxX);
-      b.y = clampNumber(b.y, minY, maxY);
+      clampBodyPosition(b, W, H, topPad, botPad);
       b.el.style.left = b.x.toFixed(1) + 'px';
       b.el.style.top = b.y.toFixed(1) + 'px';
     }

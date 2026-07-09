@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fusen-todo-v9';
+const CACHE_NAME = 'fusen-todo-v10';
 const CORE_ASSETS = [
   './',
   './index.html',
