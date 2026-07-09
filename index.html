@@ -1141,7 +1141,8 @@ const ACHIEVEMENTS = {
   crowded_sky: { badge:'🐦', title:'鳩から苦情', desc:'空がいっぱいで風船を飛ばせませんでした。これ以上飛ばしたら鳩が迷惑するよ。' },
   crowded_sky3: { badge:'🚧', title:'空域管理者', desc:'満員の空を3回見ました。そろそろ航空整理が必要。' },
   squeezed_sky: { badge:'🤏', title:'仕方ないな〜', desc:'満員の空を少しだけ詰めて風船を飛ばしました。今回だけだからね。' },
-  squeezed_sky3: { badge:'🧳', title:'空の収納術', desc:'満員の空を3回詰めました。整理整頓の才能が浮いている。' },
+  squeezed_sky3: { badge:'🧳', title:'空の収納術', desc:'満員の空を3回詰めました。満員電車無理やり乗車するタイプの人。' },
+  squeezed_sky10: { badge:'🗜️', title:'圧縮名人', desc:'満員の空を10回詰めました。ふうせんが可哀想だよ。' },
   clean_sky: { badge:'🌤️', title:'空っぽの空', desc:'今日見えている風船を全部割りました。視界、良好。' },
   clean_sky5: { badge:'🧹', title:'空の整備士', desc:'空っぽの空を5回作りました。すっきりしたね。' },
   streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました。三日坊主脱却。' },
@@ -1258,6 +1259,7 @@ function recordSkySqueeze(){
   const unlocked = [];
   if(meta.skySqueezes >= 1) unlockAchievement('squeezed_sky', unlocked);
   if(meta.skySqueezes >= 3) unlockAchievement('squeezed_sky3', unlocked);
+  if(meta.skySqueezes >= 10) unlockAchievement('squeezed_sky10', unlocked);
   showAchievements(unlocked);
 }
 function wouldOverfillSky(candidate){
