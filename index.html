@@ -1272,8 +1272,8 @@ function wouldOverfillSky(candidate){
     return sum + Math.PI * r * r;
   }, 0) / usable;
   const narrow = W < 700;
-  const countLimit = narrow ? 18 : 38;
-  const loadLimit = narrow ? .54 : .46;
+  const countLimit = narrow ? 22 : 38;
+  const loadLimit = narrow ? .72 : .46;
   return all.length > countLimit || load > loadLimit;
 }
 function celebrationPower(task, d, cleanSky){
