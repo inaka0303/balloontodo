@@ -63,6 +63,24 @@ header .count b{font-size:19px;color:var(--ink);margin:0 2px}
 .sync-btn.busy{background:#fff1c7;color:#795b13}
 .sync-btn.error{background:#ffe1df;color:var(--red-dark)}
 body.night .sync-btn{background:rgba(20,35,60,.64);color:var(--ink)}
+.login-nudge{
+  position:fixed;top:calc(50px + env(safe-area-inset-top));left:50%;z-index:6;
+  transform:translate(-50%,-8px);opacity:0;pointer-events:none;
+  width:min(420px,calc(100vw - 28px));border-radius:18px;padding:10px 12px;
+  background:rgba(255,255,255,.84);color:#274357;
+  box-shadow:0 8px 22px rgba(30,60,90,.16);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  transition:opacity .25s ease,transform .25s ease;
+  backdrop-filter:blur(10px);
+}
+.login-nudge.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.login-nudge span{font-size:12px;font-weight:700;line-height:1.45}
+.login-nudge button{
+  flex:none;border:none;border-radius:99px;padding:7px 11px;
+  background:var(--red);color:#fff;font-family:inherit;font-size:12px;font-weight:700;
+  cursor:pointer;box-shadow:0 3px 10px rgba(200,50,50,.25);
+}
+body.night .login-nudge{background:rgba(24,38,62,.9);color:#eaf2ff}
 
 /* ------- sky (balloon field) ------- */
 #sky{position:fixed;inset:0;z-index:1}
@@ -221,6 +239,26 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
   background:none;color:#c22f2c;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;
   display:none;
 }
+#logoutVeil{position:fixed;inset:0;background:rgba(20,40,60,.35);z-index:13;
+  opacity:0;pointer-events:none;transition:opacity .22s ease}
+#logoutVeil.show{opacity:1;pointer-events:auto}
+#logoutDialog{
+  position:fixed;left:50%;top:50%;z-index:14;
+  width:min(340px,calc(100vw - 36px));border-radius:18px;padding:18px;
+  background:#fff;color:#274357;box-shadow:0 18px 42px rgba(20,50,80,.28);
+  transform:translate(-50%,-46%) scale(.96);opacity:0;pointer-events:none;
+  transition:opacity .22s ease,transform .22s ease;
+}
+#logoutDialog.show{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+#logoutDialog h2{font-size:17px;margin-bottom:8px}
+#logoutDialog p{font-size:13px;font-weight:700;line-height:1.7;color:#7b93a5}
+.logoutActions{display:flex;gap:10px;margin-top:16px}
+.logoutActions button{
+  flex:1;border:none;border-radius:13px;padding:11px 8px;
+  font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;
+}
+#logoutCancelBtn{background:#eef5f8;color:#274357}
+#logoutConfirmBtn{background:var(--red);color:#fff}
 
 /* ------- toast ------- */
 #toast{
@@ -271,6 +309,11 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
   </div>
 </header>
 
+<div class="login-nudge" id="loginNudge">
+  <span>ログインしないと、端末の気まぐれで風船が勝手に割れちゃうかも...</span>
+  <button type="button" id="loginNudgeBtn">同期する</button>
+</div>
+
 <div id="sky"></div>
 
 <div id="empty">
@@ -306,6 +349,16 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
   </div>
   <button id="saveBtn">とばす 🎈</button>
   <button id="delBtn">この風船を削除する</button>
+</div>
+
+<div id="logoutVeil"></div>
+<div id="logoutDialog" role="dialog" aria-modal="true" aria-labelledby="logoutTitle">
+  <h2 id="logoutTitle">ログアウトしますか？</h2>
+  <p>この端末だけの保存に戻ります。同期中のデータはGoogleログインすればまた戻せます。</p>
+  <div class="logoutActions">
+    <button type="button" id="logoutCancelBtn">キャンセル</button>
+    <button type="button" id="logoutConfirmBtn">ログアウト</button>
+  </div>
 </div>
 
 <div id="toast"><span class="t" id="toastText"></span><button id="undoBtn">元に戻す</button></div>
@@ -419,6 +472,9 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
 
 /* ---------- optional Firebase sync ---------- */
 const syncBtn = document.getElementById('syncBtn');
+const loginNudge = document.getElementById('loginNudge');
+const logoutVeil = document.getElementById('logoutVeil');
+const logoutDialog = document.getElementById('logoutDialog');
 const syncState = {
   configured: false,
   modules: null,
@@ -445,6 +501,17 @@ function setSyncStatus(label, mode){
   if(syncState.user) syncBtn.title = 'Google同期からログアウト';
   else if(syncState.configured) syncBtn.title = 'Googleでログインして同期';
   else syncBtn.title = 'firebase-config.js を設定すると同期できます';
+}
+function updateLoginNudge(){
+  loginNudge.classList.toggle('show', syncState.configured && !syncState.user);
+}
+function openLogoutDialog(){
+  logoutVeil.classList.add('show');
+  logoutDialog.classList.add('show');
+}
+function closeLogoutDialog(){
+  logoutVeil.classList.remove('show');
+  logoutDialog.classList.remove('show');
 }
 function queueRemoteSave(){
   if(syncState.applyingRemote || !syncState.user || !syncState.db || !syncState.modules) return;
@@ -483,6 +550,7 @@ function attachUser(user){
   if(syncState.unsub) syncState.unsub();
   syncState.user = user;
   syncState.initialSnapshotHandled = false;
+  updateLoginNudge();
   setSyncStatus('同期中', 'busy');
 
   const ref = doc(syncState.db, 'users', user.uid, 'state', 'tasks');
@@ -517,6 +585,7 @@ function detachUser(){
   syncState.unsub = null;
   syncState.user = null;
   setSyncStatus('同期する', 'ready');
+  updateLoginNudge();
 }
 async function signInForSync(){
   if(!syncState.configured){
@@ -543,6 +612,7 @@ async function initFirebaseSync(){
   syncState.configured = hasFirebaseConfig();
   if(!syncState.configured){
     setSyncStatus('ローカル', 'local');
+    updateLoginNudge();
     return;
   }
   setSyncStatus('確認中', 'busy');
@@ -584,10 +654,17 @@ async function initFirebaseSync(){
 }
 syncBtn.addEventListener('click', async () => {
   if(syncState.user && syncState.modules){
-    await syncState.modules.signOut(syncState.auth);
+    openLogoutDialog();
     return;
   }
   signInForSync();
+});
+document.getElementById('loginNudgeBtn').addEventListener('click', signInForSync);
+document.getElementById('logoutCancelBtn').addEventListener('click', closeLogoutDialog);
+logoutVeil.addEventListener('click', closeLogoutDialog);
+document.getElementById('logoutConfirmBtn').addEventListener('click', async () => {
+  if(syncState.user && syncState.modules) await syncState.modules.signOut(syncState.auth);
+  closeLogoutDialog();
 });
 
 /* ---------- sky / time of day ---------- */
