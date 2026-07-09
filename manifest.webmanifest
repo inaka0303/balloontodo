@@ -1,0 +1,19 @@
+{
+  "name": "ふうせんToDo",
+  "short_name": "ふうせん",
+  "description": "風船を割ってタスクを完了するToDoアプリ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#bfe6fb",
+  "theme_color": "#7ec8f0",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
