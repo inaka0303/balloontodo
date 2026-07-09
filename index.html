@@ -491,6 +491,7 @@ function normalizeMeta(value){
     noDuePops: Math.max(0, Number(src.noDuePops) || 0),
     smallPops: Math.max(0, Number(src.smallPops) || 0),
     crowdedRejects: Math.max(0, Number(src.crowdedRejects) || 0),
+    skySqueezes: Math.max(0, Number(src.skySqueezes) || 0),
     streakDays: Math.max(0, Number(src.streakDays) || 0),
     lastPopDate: src.lastPopDate || null,
     timePops: {
@@ -750,6 +751,9 @@ const BALLOON_COLLISION_SCALE = .58;
 const BALLOON_GAP_SCALE = 1.04;
 const BALLOON_LAYOUT_ITERATIONS = 90;
 
+function skySqueezeScale(){
+  return Math.max(.78, 1 - (meta.skySqueezes || 0) * .055);
+}
 function daysLeft(due){
   const [y,m,d] = due.split('-').map(Number);
   const t = new Date(); 
@@ -768,7 +772,7 @@ function diameter(task){
     else mul = 1 + (8 - dl) * 0.08;   // 8日前から徐々に膨らむ
   }
   const cap = Math.min(window.innerWidth, 520) * 0.46;
-  return Math.min(base * mul, Math.max(cap, 128));
+  return Math.max(72, Math.min(base * mul, Math.max(cap, 128)) * skySqueezeScale());
 }
 function dueLabel(task){
   if(task.daily) return '🌞 毎日';
@@ -1136,6 +1140,8 @@ const ACHIEVEMENTS = {
   all_times_pop: { badge:'🕰️', title:'一日全天候', desc:'朝・昼・夜・深夜に割りました。君いつ寝てるの？' },
   crowded_sky: { badge:'🐦', title:'鳩から苦情', desc:'空がいっぱいで風船を飛ばせませんでした。これ以上飛ばしたら鳩が迷惑するよ。' },
   crowded_sky3: { badge:'🚧', title:'空域管理者', desc:'満員の空を3回見ました。そろそろ航空整理が必要。' },
+  squeezed_sky: { badge:'🤏', title:'仕方ないな〜', desc:'満員の空を少しだけ詰めて風船を飛ばしました。今回だけだからね。' },
+  squeezed_sky3: { badge:'🧳', title:'空の収納術', desc:'満員の空を3回詰めました。整理整頓の才能が浮いている。' },
   clean_sky: { badge:'🌤️', title:'空っぽの空', desc:'今日見えている風船を全部割りました。視界、良好。' },
   clean_sky5: { badge:'🧹', title:'空の整備士', desc:'空っぽの空を5回作りました。すっきりしたね。' },
   streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました。三日坊主脱却。' },
@@ -1246,6 +1252,13 @@ function recordCrowdedSky(){
   if(meta.crowdedRejects >= 3) unlockAchievement('crowded_sky3', unlocked);
   showAchievements(unlocked);
   save();
+}
+function recordSkySqueeze(){
+  meta.skySqueezes++;
+  const unlocked = [];
+  if(meta.skySqueezes >= 1) unlockAchievement('squeezed_sky', unlocked);
+  if(meta.skySqueezes >= 3) unlockAchievement('squeezed_sky3', unlocked);
+  showAchievements(unlocked);
 }
 function wouldOverfillSky(candidate){
   const all = visibleTasks().concat(candidate);
@@ -1405,6 +1418,8 @@ const fDue = document.getElementById('fDue');
 const duePicker = document.getElementById('duePicker');
 const fDueText = document.getElementById('fDueText');
 let fImp = 2;
+let crowdedAddAttempts = 0;
+let crowdedAddKey = null;
 
 function formatDueText(value){
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
@@ -1421,6 +1436,25 @@ function openDuePicker(){
     try{ fDue.showPicker(); }catch(e){}
   }
 }
+function compactSkyMode(){
+  return (sky.clientWidth || window.innerWidth) < 700;
+}
+function crowdedKey(task){
+  return [task.title, task.imp, task.daily ? 1 : 0, task.due || ''].join('|');
+}
+function resetCrowdedAddAttempts(){
+  crowdedAddAttempts = 0;
+  crowdedAddKey = null;
+}
+function countCrowdedAddAttempt(task){
+  const key = crowdedKey(task);
+  if(crowdedAddKey !== key){
+    crowdedAddKey = key;
+    crowdedAddAttempts = 0;
+  }
+  crowdedAddAttempts++;
+  return crowdedAddAttempts;
+}
 function setImp(v){
   fImp = v;
   document.querySelectorAll('#fSizes button').forEach(b =>
@@ -1435,6 +1469,7 @@ fDue.addEventListener('change', updateDuePicker);
 duePicker.addEventListener('click', openDuePicker);
 
 function openSheet(id){
+  resetCrowdedAddAttempts();
   editingId = id || null;
   const t = id ? tasks.find(x => x.id === id) : null;
   document.getElementById('sheetTitle').textContent = t ? '風船を編集' : 'あたらしい風船';
@@ -1451,6 +1486,7 @@ function openSheet(id){
   if(!t) setTimeout(() => fTitle.focus(), 320);
 }
 function closeSheet(){
+  resetCrowdedAddAttempts();
   veil.classList.remove('show');
   sheet.classList.remove('show');
   fTitle.blur();
@@ -1477,10 +1513,25 @@ document.getElementById('saveBtn').addEventListener('click', () => {
       completedAt: null
     };
     if(wouldOverfillSky(nextTask)){
-      showNotice('これ以上飛ばしたら鳩が迷惑するよ🐦');
-      recordCrowdedSky();
-      return;
+      if(compactSkyMode()){
+        const attempts = countCrowdedAddAttempt(nextTask);
+        if(attempts >= 3){
+          recordSkySqueeze();
+          tasks.push(nextTask);
+          showNotice('仕方ないな〜');
+          save(); closeSheet(); render();
+          return;
+        }
+        showNotice(attempts === 2 ? 'もう一回押したら、ちょっとだけ詰めるよ' : 'これ以上飛ばしたら鳩が迷惑するよ🐦');
+        recordCrowdedSky();
+        return;
+      }else{
+        showNotice('これ以上飛ばしたら鳩が迷惑するよ🐦');
+        recordCrowdedSky();
+        return;
+      }
     }
+    resetCrowdedAddAttempts();
     tasks.push(nextTask);
   }
   save(); closeSheet(); render();
