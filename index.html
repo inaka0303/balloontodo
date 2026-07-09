@@ -233,6 +233,7 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 }
 #toast.show{transform:translate(-50%,0);opacity:1;pointer-events:auto}
 #toast .t{overflow:hidden;text-overflow:ellipsis;max-width:56vw}
+#toast.notice .t{max-width:78vw}
 #toast button{
   border:none;background:rgba(255,255,255,.18);color:#ffd48a;border-radius:99px;
   padding:6px 14px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;
@@ -384,6 +385,7 @@ function normalizeMeta(value){
     dueTodayPops: Math.max(0, Number(src.dueTodayPops) || 0),
     noDuePops: Math.max(0, Number(src.noDuePops) || 0),
     smallPops: Math.max(0, Number(src.smallPops) || 0),
+    crowdedRejects: Math.max(0, Number(src.crowdedRejects) || 0),
     streakDays: Math.max(0, Number(src.streakDays) || 0),
     lastPopDate: src.lastPopDate || null,
     timePops: {
@@ -623,7 +625,7 @@ function daysLeft(due){
 }
 function diameter(task){
   const wide = window.innerWidth > 900;
-  const base = [0, 66, 88, 112][task.imp] * (wide ? 1.35 : 1);
+  const base = [0, 82, 108, 136][task.imp] * (wide ? 1.28 : 1);
   let mul = 1;
   if(!task.daily && task.due){
     const dl = daysLeft(task.due);
@@ -646,11 +648,20 @@ function dueLabel(task){
 
 /* ---------- render ---------- */
 const sky = document.getElementById('sky');
+let physicsFrame = null;
+let physicsBodies = [];
+
+function stopBalloonPhysics(){
+  if(physicsFrame) cancelAnimationFrame(physicsFrame);
+  physicsFrame = null;
+  physicsBodies = [];
+}
 function visibleTasks(){
   const t = todayStr();
   return tasks.filter(x => x.daily ? x.doneOn !== t : !x.done);
 }
 function render(){
+  stopBalloonPhysics();
   sky.innerHTML = '';
   const vis = visibleTasks();
   document.getElementById('empty').style.display = vis.length ? 'none' : 'flex';
@@ -715,7 +726,7 @@ function layout(items){
   const placed = [];
   items.sort((a,b) => b.d - a.d);
   for(const it of items){
-    const r = it.d / 2;
+    const r = it.d * 0.52;
     const xMin = r + 6, xMax = W - r - 6;
     const yMin = topPad + r, yMax = Math.max(yMin + 1, H - botPad - r * 1.4);
     let best = null;
@@ -730,10 +741,90 @@ function layout(items){
       if(ok){ best = {x, y, s: 0}; break; }
       if(!best || worst > best.s) best = {x, y, s: worst};
     }
-    placed.push({x: best.x, y: best.y, r});
+    const body = {
+      el: it.el,
+      x: best.x,
+      y: best.y,
+      r,
+      vx: (Math.random() - .5) * .34,
+      vy: (Math.random() - .5) * .22,
+      mass: r * r,
+      phase: Math.random() * Math.PI * 2
+    };
+    placed.push(body);
     it.el.style.left = best.x + 'px';
     it.el.style.top  = best.y + 'px';
   }
+  startBalloonPhysics(placed);
+}
+function startBalloonPhysics(bodies){
+  physicsBodies = bodies;
+  if(!physicsBodies.length) return;
+  let last = performance.now();
+  const tick = now => {
+    const dt = Math.min(2, Math.max(.5, (now - last) / 16.67));
+    last = now;
+    physicsBodies = physicsBodies.filter(b => b.el.isConnected);
+    if(!physicsBodies.length){ physicsFrame = null; return; }
+
+    const W = sky.clientWidth, H = sky.clientHeight;
+    const topPad = 70, botPad = 130;
+    for(const b of physicsBodies){
+      const wind = Math.sin(now * .00035 + b.phase) * .006;
+      const float = Math.cos(now * .00042 + b.phase) * .004 - .0015;
+      b.vx = (b.vx + wind * dt) * .992;
+      b.vy = (b.vy + float * dt) * .992;
+      const speed = Math.hypot(b.vx, b.vy);
+      const maxSpeed = .72;
+      if(speed > maxSpeed){
+        b.vx = b.vx / speed * maxSpeed;
+        b.vy = b.vy / speed * maxSpeed;
+      }
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      const minX = b.r + 6, maxX = W - b.r - 6;
+      const minY = topPad + b.r, maxY = Math.max(minY, H - botPad - b.r * 1.28);
+      if(b.x < minX){ b.x = minX; b.vx = Math.abs(b.vx) * .76; }
+      if(b.x > maxX){ b.x = maxX; b.vx = -Math.abs(b.vx) * .76; }
+      if(b.y < minY){ b.y = minY; b.vy = Math.abs(b.vy) * .72; }
+      if(b.y > maxY){ b.y = maxY; b.vy = -Math.abs(b.vy) * .72; }
+    }
+
+    for(let i=0;i<physicsBodies.length;i++){
+      for(let j=i+1;j<physicsBodies.length;j++){
+        const a = physicsBodies[i], b = physicsBodies[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || .001;
+        const minDist = (a.r + b.r) * .86;
+        if(dist >= minDist) continue;
+        const nx = dx / dist, ny = dy / dist;
+        const overlap = minDist - dist;
+        const invA = 1 / a.mass, invB = 1 / b.mass;
+        const invSum = invA + invB;
+        a.x -= nx * overlap * (invA / invSum) * .82;
+        a.y -= ny * overlap * (invA / invSum) * .82;
+        b.x += nx * overlap * (invB / invSum) * .82;
+        b.y += ny * overlap * (invB / invSum) * .82;
+
+        const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
+        const closing = rvx * nx + rvy * ny;
+        if(closing < .06){
+          const impulse = (-(1.22) * closing + .018) / invSum;
+          a.vx -= impulse * invA * nx;
+          a.vy -= impulse * invA * ny;
+          b.vx += impulse * invB * nx;
+          b.vy += impulse * invB * ny;
+        }
+      }
+    }
+
+    for(const b of physicsBodies){
+      b.el.style.left = b.x.toFixed(1) + 'px';
+      b.el.style.top = b.y.toFixed(1) + 'px';
+    }
+    physicsFrame = requestAnimationFrame(tick);
+  };
+  physicsFrame = requestAnimationFrame(tick);
 }
 let rsT;
 window.addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(render, 250); });
@@ -811,6 +902,8 @@ const ACHIEVEMENTS = {
   night_pop: { badge:'🌙', title:'夜割り', desc:'夜に風船を割りました。近所迷惑じゃない？' },
   midnight_pop: { badge:'🛌', title:'深夜割り', desc:'深夜に風船を割りました。夜更かししすぎじゃない？' },
   all_times_pop: { badge:'🕰️', title:'一日全天候', desc:'朝・昼・夜・深夜に割りました。君いつ寝てるの？' },
+  crowded_sky: { badge:'🐦', title:'鳩から苦情', desc:'空がいっぱいで風船を飛ばせませんでした。これ以上飛ばしたら鳩が迷惑するよ。' },
+  crowded_sky3: { badge:'🚧', title:'空域管理者', desc:'満員の空を3回見ました。そろそろ航空整理が必要。' },
   clean_sky: { badge:'🌤️', title:'空っぽの空', desc:'今日見えている風船を全部割りました。視界、良好。' },
   clean_sky5: { badge:'🧹', title:'空の整備士', desc:'空っぽの空を5回作りました。すっきりしたね。' },
   streak3: { badge:'🌱', title:'3日連続', desc:'3日続けて風船を割りました。三日坊主脱却。' },
@@ -900,6 +993,40 @@ function showNextAchievement(){
     box.classList.remove('show');
     setTimeout(showNextAchievement, 420);
   }, 2600);
+}
+function showNotice(message){
+  lastPopped = null;
+  clearTimeout(popTimer);
+  const toast = document.getElementById('toast');
+  document.getElementById('toastText').textContent = message;
+  document.getElementById('undoBtn').style.display = 'none';
+  toast.classList.add('notice','show');
+  popTimer = setTimeout(() => {
+    toast.classList.remove('show','notice');
+    document.getElementById('undoBtn').style.display = '';
+  }, 3600);
+}
+function recordCrowdedSky(){
+  meta.crowdedRejects++;
+  const unlocked = [];
+  if(meta.crowdedRejects >= 1) unlockAchievement('crowded_sky', unlocked);
+  if(meta.crowdedRejects >= 3) unlockAchievement('crowded_sky3', unlocked);
+  showAchievements(unlocked);
+  save();
+}
+function wouldOverfillSky(candidate){
+  const all = visibleTasks().concat(candidate);
+  const W = sky.clientWidth || window.innerWidth;
+  const H = sky.clientHeight || window.innerHeight;
+  const usable = Math.max(1, W * Math.max(1, H - 200));
+  const load = all.reduce((sum, task) => {
+    const r = diameter(task) * .52;
+    return sum + Math.PI * r * r;
+  }, 0) / usable;
+  const narrow = W < 700;
+  const countLimit = narrow ? 18 : 38;
+  const loadLimit = narrow ? .5 : .42;
+  return all.length > countLimit || load > loadLimit;
 }
 function celebrationPower(task, d, cleanSky){
   let power = Math.max(task.imp || 1, Math.round(d / 46) - 1);
@@ -1012,6 +1139,8 @@ function pop(task, el){
   lastPopped = task;
   document.getElementById('toastText').textContent = `「${task.title}」完了！`;
   const toast = document.getElementById('toast');
+  toast.classList.remove('notice');
+  document.getElementById('undoBtn').style.display = '';
   toast.classList.add('show');
   clearTimeout(popTimer);
   popTimer = setTimeout(() => { toast.classList.remove('show'); lastPopped = null; render(); }, 4500);
@@ -1084,14 +1213,20 @@ document.getElementById('saveBtn').addEventListener('click', () => {
     t.title = title; t.imp = fImp; t.daily = fDaily.checked;
     t.due = fDaily.checked ? null : (fDue.value || null);
   }else{
-    tasks.push({
+    const nextTask = {
       id: uid(), title, imp: fImp,
       daily: fDaily.checked,
       due: fDaily.checked ? null : (fDue.value || null),
       done: false, doneOn: null,
       createdAt: Date.now(),
       completedAt: null
-    });
+    };
+    if(wouldOverfillSky(nextTask)){
+      showNotice('これ以上飛ばしたら鳩が迷惑するよ🐦');
+      recordCrowdedSky();
+      return;
+    }
+    tasks.push(nextTask);
   }
   save(); closeSheet(); render();
 });
