@@ -201,11 +201,17 @@ body.night .balloon .due{background:rgba(20,35,60,.5)}
 #sheet.show{transform:translateY(0)}
 #sheet h2{font-size:16px;margin-bottom:14px}
 #sheet label{display:block;font-size:12px;font-weight:700;color:#7b93a5;margin:14px 0 6px}
-#sheet input[type=text],#sheet input[type=date]{
+#sheet input[type=text],#sheet select{
   width:100%;border:2px solid #dbe7ef;border-radius:12px;padding:11px 12px;
   font-size:16px;font-family:inherit;background:#f7fbfd;color:inherit;outline:none;
 }
-#sheet input:focus{border-color:var(--red)}
+#sheet input:focus,#sheet select:focus{border-color:var(--red)}
+.dateFields{
+  display:grid;grid-template-columns:minmax(92px,1.15fr) auto minmax(66px,.8fr) auto minmax(66px,.8fr) auto;
+  align-items:center;gap:6px;width:100%;
+}
+.dateFields select{min-width:0;padding:11px 8px}
+.dateFields span{font-size:13px;font-weight:700;color:#7b93a5;white-space:nowrap}
 .sizes{display:flex;gap:10px}
 .sizes button{
   flex:1;border:2px solid #dbe7ef;background:#f7fbfd;border-radius:14px;
@@ -297,6 +303,12 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
   header .date{font-size:18px}
   #hint{font-size:13px}
 }
+@media(max-width:420px){
+  #sheet{padding-left:16px;padding-right:16px}
+  .dateFields{grid-template-columns:minmax(82px,1.15fr) auto minmax(58px,.75fr) auto minmax(58px,.75fr) auto;gap:4px}
+  .dateFields select{font-size:15px;padding-left:6px;padding-right:4px}
+  .dateFields span{font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -345,7 +357,11 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
   </div>
   <div id="dueRow">
     <label>締め切り（近づくほど膨らむ）</label>
-    <input type="date" id="fDue">
+    <div class="dateFields" id="dueFields">
+      <select id="fDueY" aria-label="締め切りの年"></select><span>年</span>
+      <select id="fDueM" aria-label="締め切りの月"></select><span>月</span>
+      <select id="fDueD" aria-label="締め切りの日"></select><span>日</span>
+    </div>
   </div>
   <button id="saveBtn">とばす 🎈</button>
   <button id="delBtn">この風船を削除する</button>
@@ -417,8 +433,28 @@ function normalizeTasks(value){
       done: !!t.done,
       doneOn: t.doneOn || null,
       createdAt: Number(t.createdAt) || Date.now(),
-      completedAt: t.completedAt || null
+      completedAt: t.completedAt || null,
+      pos: normalizePosition(t.pos)
     }));
+}
+function clampNumber(value, min, max){
+  if(max < min) return (min + max) / 2;
+  return Math.max(min, Math.min(max, value));
+}
+function normalizePosition(value){
+  const src = value && typeof value === 'object' ? value : null;
+  if(!src) return null;
+  const x = Number(src.x), y = Number(src.y);
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const vx = Number(src.vx), vy = Number(src.vy);
+  return {
+    x: clampNumber(x, -20000, 20000),
+    y: clampNumber(y, -20000, 20000),
+    vx: Number.isFinite(vx) ? clampNumber(vx, -1.5, 1.5) : 0,
+    vy: Number.isFinite(vy) ? clampNumber(vy, -1.5, 1.5) : 0,
+    w: Number.isFinite(Number(src.w)) && Number(src.w) > 0 ? clampNumber(Number(src.w), 1, 20000) : null,
+    h: Number.isFinite(Number(src.h)) && Number(src.h) > 0 ? clampNumber(Number(src.h), 1, 20000) : null
+  };
 }
 function normalizeMeta(value){
   const src = value && typeof value === 'object' ? value : {};
@@ -458,6 +494,7 @@ function backupLocalTasks(){
   store.set(BACKUP_KEY_PREFIX + Date.now(), JSON.stringify(tasks));
 }
 function save(){
+  capturePhysicsPositions();
   tasks = normalizeTasks(tasks);
   meta = normalizeMeta(meta);
   writeLocalTasks(tasks);
@@ -693,6 +730,8 @@ function makeClouds(){
 }
 
 /* ---------- balloon sizing ---------- */
+const BALLOON_COLLISION_SCALE = .58;
+
 function daysLeft(due){
   const [y,m,d] = due.split('-').map(Number);
   const t = new Date(); 
@@ -702,7 +741,7 @@ function daysLeft(due){
 }
 function diameter(task){
   const wide = window.innerWidth > 900;
-  const base = [0, 82, 108, 136][task.imp] * (wide ? 1.28 : 1);
+  const base = [0, 88, 120, 166][task.imp] * (wide ? 1.28 : 1);
   let mul = 1;
   if(!task.daily && task.due){
     const dl = daysLeft(task.due);
@@ -710,8 +749,8 @@ function diameter(task){
     else if(dl >= 8) mul = 1;
     else mul = 1 + (8 - dl) * 0.08;   // 8日前から徐々に膨らむ
   }
-  const cap = Math.min(window.innerWidth, 500) * 0.42;
-  return Math.min(base * mul, Math.max(cap, 120));
+  const cap = Math.min(window.innerWidth, 520) * 0.46;
+  return Math.min(base * mul, Math.max(cap, 128));
 }
 function dueLabel(task){
   if(task.daily) return '🌞 毎日';
@@ -728,7 +767,17 @@ const sky = document.getElementById('sky');
 let physicsFrame = null;
 let physicsBodies = [];
 
+function capturePhysicsPositions(){
+  if(!physicsBodies.length) return;
+  const W = sky.clientWidth || window.innerWidth;
+  const H = sky.clientHeight || window.innerHeight;
+  for(const b of physicsBodies){
+    if(!b.task) continue;
+    b.task.pos = normalizePosition({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, w: W, h: H });
+  }
+}
 function stopBalloonPhysics(){
+  capturePhysicsPositions();
   if(physicsFrame) cancelAnimationFrame(physicsFrame);
   physicsFrame = null;
   physicsBodies = [];
@@ -752,7 +801,7 @@ function render(){
   const items = vis.map(task => {
     const el = buildBalloon(task);
     sky.appendChild(el);
-    return { el, d: diameter(task) };
+    return { task, el, d: diameter(task) };
   });
   layout(items);
 }
@@ -803,30 +852,52 @@ function layout(items){
   const placed = [];
   items.sort((a,b) => b.d - a.d);
   for(const it of items){
-    const r = it.d * 0.52;
+    const r = it.d * BALLOON_COLLISION_SCALE;
     const xMin = r + 6, xMax = W - r - 6;
     const yMin = topPad + r, yMax = Math.max(yMin + 1, H - botPad - r * 1.4);
     let best = null;
-    for(let i=0;i<70;i++){
-      const x = xMin + Math.random() * Math.max(1, xMax - xMin);
-      const y = yMin + Math.random() * Math.max(1, yMax - yMin);
-      let ok = true, worst = Infinity;
-      for(const p of placed){
-        const gap = Math.hypot(x-p.x, y-p.y) - (r + p.r) * 0.9;
-        if(gap < 0){ ok = false; worst = Math.min(worst, gap); }
+    const saved = normalizePosition(it.task && it.task.pos);
+    if(saved){
+      const scaledX = saved.w ? saved.x * (W / saved.w) : saved.x;
+      const scaledY = saved.h ? saved.y * (H / saved.h) : saved.y;
+      best = {
+        x: clampNumber(scaledX, xMin, xMax),
+        y: clampNumber(scaledY, yMin, yMax),
+        s: 0,
+        saved: true
+      };
+    }else{
+      for(let i=0;i<90;i++){
+        const x = xMin + Math.random() * Math.max(1, xMax - xMin);
+        const y = yMin + Math.random() * Math.max(1, yMax - yMin);
+        let ok = true, worst = Infinity;
+        for(const p of placed){
+          const gap = Math.hypot(x-p.x, y-p.y) - (r + p.r) * 1.02;
+          if(gap < 0){ ok = false; worst = Math.min(worst, gap); }
+        }
+        if(ok){ best = {x, y, s: 0}; break; }
+        if(!best || worst > best.s) best = {x, y, s: worst};
       }
-      if(ok){ best = {x, y, s: 0}; break; }
-      if(!best || worst > best.s) best = {x, y, s: worst};
     }
+    const speedScale = clampNumber(104 / Math.max(80, r), .58, 1.15);
     const body = {
+      task: it.task,
       el: it.el,
       x: best.x,
       y: best.y,
       r,
-      vx: (Math.random() - .5) * .34,
-      vy: (Math.random() - .5) * .22,
+      vx: saved ? saved.vx + (Math.random() - .5) * .08 : (Math.random() - .5) * .44,
+      vy: saved ? saved.vy + (Math.random() - .5) * .06 : (Math.random() - .5) * .28,
       mass: r * r,
-      phase: Math.random() * Math.PI * 2
+      phase: Math.random() * Math.PI * 2,
+      altPhase: Math.random() * Math.PI * 2,
+      windAmp: (.003 + Math.random() * .010) * speedScale,
+      floatAmp: (.002 + Math.random() * .008) * speedScale,
+      flutterAmp: (.001 + Math.random() * .006) * speedScale,
+      driftRate: .00018 + Math.random() * .00052,
+      floatRate: .00024 + Math.random() * .00058,
+      lift: .0006 + Math.random() * .0014,
+      maxSpeed: (.42 + Math.random() * .46) * speedScale
     };
     placed.push(body);
     it.el.style.left = best.x + 'px';
@@ -847,12 +918,17 @@ function startBalloonPhysics(bodies){
     const W = sky.clientWidth, H = sky.clientHeight;
     const topPad = 70, botPad = 130;
     for(const b of physicsBodies){
-      const wind = Math.sin(now * .00035 + b.phase) * .006;
-      const float = Math.cos(now * .00042 + b.phase) * .004 - .0015;
+      const wind =
+        Math.sin(now * b.driftRate + b.phase) * b.windAmp +
+        Math.sin(now * b.driftRate * 2.7 + b.altPhase) * b.flutterAmp;
+      const float =
+        Math.cos(now * b.floatRate + b.phase) * b.floatAmp -
+        b.lift +
+        Math.sin(now * b.floatRate * 1.9 + b.altPhase) * b.flutterAmp * .45;
       b.vx = (b.vx + wind * dt) * .992;
       b.vy = (b.vy + float * dt) * .992;
       const speed = Math.hypot(b.vx, b.vy);
-      const maxSpeed = .72;
+      const maxSpeed = b.maxSpeed;
       if(speed > maxSpeed){
         b.vx = b.vx / speed * maxSpeed;
         b.vy = b.vy / speed * maxSpeed;
@@ -872,21 +948,21 @@ function startBalloonPhysics(bodies){
         const a = physicsBodies[i], b = physicsBodies[j];
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.hypot(dx, dy) || .001;
-        const minDist = (a.r + b.r) * .86;
+        const minDist = (a.r + b.r) * 1.02;
         if(dist >= minDist) continue;
         const nx = dx / dist, ny = dy / dist;
         const overlap = minDist - dist;
         const invA = 1 / a.mass, invB = 1 / b.mass;
         const invSum = invA + invB;
-        a.x -= nx * overlap * (invA / invSum) * .82;
-        a.y -= ny * overlap * (invA / invSum) * .82;
-        b.x += nx * overlap * (invB / invSum) * .82;
-        b.y += ny * overlap * (invB / invSum) * .82;
+        a.x -= nx * overlap * (invA / invSum) * .94;
+        a.y -= ny * overlap * (invA / invSum) * .94;
+        b.x += nx * overlap * (invB / invSum) * .94;
+        b.y += ny * overlap * (invB / invSum) * .94;
 
         const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
         const closing = rvx * nx + rvy * ny;
-        if(closing < .06){
-          const impulse = (-(1.22) * closing + .018) / invSum;
+        if(closing < .08){
+          const impulse = (-(1.28) * closing + .022) / invSum;
           a.vx -= impulse * invA * nx;
           a.vy -= impulse * invA * ny;
           b.vx += impulse * invB * nx;
@@ -896,6 +972,10 @@ function startBalloonPhysics(bodies){
     }
 
     for(const b of physicsBodies){
+      const minX = b.r + 6, maxX = W - b.r - 6;
+      const minY = topPad + b.r, maxY = Math.max(minY, H - botPad - b.r * 1.28);
+      b.x = clampNumber(b.x, minX, maxX);
+      b.y = clampNumber(b.y, minY, maxY);
       b.el.style.left = b.x.toFixed(1) + 'px';
       b.el.style.top = b.y.toFixed(1) + 'px';
     }
@@ -1097,12 +1177,12 @@ function wouldOverfillSky(candidate){
   const H = sky.clientHeight || window.innerHeight;
   const usable = Math.max(1, W * Math.max(1, H - 200));
   const load = all.reduce((sum, task) => {
-    const r = diameter(task) * .52;
+    const r = diameter(task) * BALLOON_COLLISION_SCALE;
     return sum + Math.PI * r * r;
   }, 0) / usable;
   const narrow = W < 700;
   const countLimit = narrow ? 18 : 38;
-  const loadLimit = narrow ? .5 : .42;
+  const loadLimit = narrow ? .54 : .46;
   return all.length > countLimit || load > loadLimit;
 }
 function celebrationPower(task, d, cleanSky){
@@ -1245,9 +1325,95 @@ const veil = document.getElementById('veil');
 const sheet = document.getElementById('sheet');
 const fTitle = document.getElementById('fTitle');
 const fDaily = document.getElementById('fDaily');
-const fDue = document.getElementById('fDue');
+const fDueY = document.getElementById('fDueY');
+const fDueM = document.getElementById('fDueM');
+const fDueD = document.getElementById('fDueD');
 let fImp = 2;
 
+function replaceOptions(select, values, blankLabel){
+  select.textContent = '';
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = blankLabel;
+  select.appendChild(blank);
+  values.forEach(value => {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = String(value);
+    select.appendChild(option);
+  });
+}
+function setupDueFields(){
+  const year = new Date().getFullYear();
+  const years = [];
+  for(let y=year-3;y<=year+10;y++) years.push(y);
+  replaceOptions(fDueY, years, '----');
+  replaceOptions(fDueM, Array.from({ length: 12 }, (_, i) => i + 1), '--');
+  syncDueDays();
+  fDueY.addEventListener('change', syncDueDays);
+  fDueM.addEventListener('change', syncDueDays);
+}
+function daysInMonth(year, month){
+  return new Date(year, month, 0).getDate();
+}
+function syncDueDays(){
+  const selected = Number(fDueD.value) || 0;
+  const year = Number(fDueY.value) || new Date().getFullYear();
+  const month = Number(fDueM.value) || 1;
+  const max = daysInMonth(year, month);
+  replaceOptions(fDueD, Array.from({ length: max }, (_, i) => i + 1), '--');
+  if(selected) fDueD.value = String(Math.min(selected, max));
+}
+function ensureDueYear(year){
+  if(!year || Array.from(fDueY.options).some(option => option.value === String(year))) return;
+  const option = document.createElement('option');
+  option.value = String(year);
+  option.textContent = String(year);
+  let inserted = false;
+  for(const current of Array.from(fDueY.options).slice(1)){
+    if(Number(current.value) > year){
+      fDueY.insertBefore(option, current);
+      inserted = true;
+      break;
+    }
+  }
+  if(!inserted) fDueY.appendChild(option);
+}
+function setDueValue(value){
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if(!match){
+    fDueY.value = '';
+    fDueM.value = '';
+    syncDueDays();
+    fDueD.value = '';
+    return;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  ensureDueYear(year);
+  fDueY.value = String(year);
+  fDueM.value = String(month);
+  syncDueDays();
+  fDueD.value = String(day);
+}
+function dueIsPartial(){
+  return !!(fDueY.value || fDueM.value || fDueD.value) && !(fDueY.value && fDueM.value && fDueD.value);
+}
+function getDueValue(){
+  if(!fDueY.value && !fDueM.value && !fDueD.value) return null;
+  if(dueIsPartial()) return null;
+  return [
+    fDueY.value,
+    String(fDueM.value).padStart(2, '0'),
+    String(fDueD.value).padStart(2, '0')
+  ].join('-');
+}
+function focusFirstEmptyDue(){
+  if(!fDueY.value) fDueY.focus();
+  else if(!fDueM.value) fDueM.focus();
+  else fDueD.focus();
+}
 function setImp(v){
   fImp = v;
   document.querySelectorAll('#fSizes button').forEach(b =>
@@ -1267,7 +1433,7 @@ function openSheet(id){
   fTitle.value = t ? t.title : '';
   setImp(t ? t.imp : 2);
   fDaily.checked = t ? !!t.daily : false;
-  fDue.value = (t && t.due) ? t.due : '';
+  setDueValue((t && t.due) ? t.due : '');
   document.getElementById('dueRow').classList.toggle('off', fDaily.checked);
   veil.classList.add('show');
   sheet.classList.add('show');
@@ -1284,16 +1450,22 @@ veil.addEventListener('click', closeSheet);
 document.getElementById('saveBtn').addEventListener('click', () => {
   const title = fTitle.value.trim();
   if(!title){ fTitle.focus(); return; }
+  if(!fDaily.checked && dueIsPartial()){
+    showNotice('締め切りは年・月・日を全部選んでね');
+    focusFirstEmptyDue();
+    return;
+  }
+  const dueValue = fDaily.checked ? null : getDueValue();
   if(editingId){
     const t = tasks.find(x => x.id === editingId);
     if(!t){ closeSheet(); render(); return; }
     t.title = title; t.imp = fImp; t.daily = fDaily.checked;
-    t.due = fDaily.checked ? null : (fDue.value || null);
+    t.due = dueValue;
   }else{
     const nextTask = {
       id: uid(), title, imp: fImp,
       daily: fDaily.checked,
-      due: fDaily.checked ? null : (fDue.value || null),
+      due: dueValue,
       done: false, doneOn: null,
       createdAt: Date.now(),
       completedAt: null
@@ -1333,6 +1505,7 @@ if('serviceWorker' in navigator && location.protocol !== 'file:'){
 }
 
 /* ---------- start ---------- */
+setupDueFields();
 applySky();
 makeClouds();
 render();
