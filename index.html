@@ -52,14 +52,6 @@ header .date{font-size:15px;font-weight:700;letter-spacing:.04em}
 header .headerRight{display:flex;align-items:center;gap:8px;pointer-events:auto}
 header .count{font-size:13px;font-weight:700;color:var(--ink-soft)}
 header .count b{font-size:19px;color:var(--ink);margin:0 2px}
-.music-btn{
-  width:32px;height:32px;border:none;border-radius:50%;
-  background:rgba(255,255,255,.58);color:var(--ink);
-  font-size:17px;font-weight:700;font-family:inherit;line-height:1;
-  box-shadow:0 2px 8px rgba(30,60,90,.12);cursor:pointer;
-  backdrop-filter:blur(8px);
-}
-.music-btn.on{background:#fff1c7;color:#8b6511}
 .sync-btn{
   border:none;border-radius:99px;padding:6px 10px;
   background:rgba(255,255,255,.58);color:var(--ink);
@@ -70,7 +62,7 @@ header .count b{font-size:19px;color:var(--ink);margin:0 2px}
 .sync-btn.ready{background:rgba(255,255,255,.82)}
 .sync-btn.busy{background:#fff1c7;color:#795b13}
 .sync-btn.error{background:#ffe1df;color:var(--red-dark)}
-body.night .sync-btn, body.night .music-btn{background:rgba(20,35,60,.64);color:var(--ink)}
+body.night .sync-btn{background:rgba(20,35,60,.64);color:var(--ink)}
 
 /* ------- sky (balloon field) ------- */
 #sky{position:fixed;inset:0;z-index:1}
@@ -273,7 +265,6 @@ body.night #achievementToast{background:rgba(24,38,62,.92);color:#eaf2ff}
 <header>
   <div class="date" id="hdrDate"></div>
   <div class="headerRight">
-    <button type="button" class="music-btn" id="musicBtn" title="BGM">♪</button>
     <button type="button" class="sync-btn local" id="syncBtn">ローカル</button>
     <div class="count" id="hdrCount"></div>
   </div>
@@ -337,7 +328,6 @@ const store = {
 };
 const KEY = 'fusen.tasks.v1';
 const META_KEY = 'fusen.meta.v1';
-const BGM_KEY = 'fusen.bgm.v1';
 const BACKUP_KEY_PREFIX = 'fusen.tasks.backup.';
 
 /* ---------- state ---------- */
@@ -737,8 +727,6 @@ window.addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(re
 
 /* ---------- pop ---------- */
 let audioCtx = null;
-const musicBtn = document.getElementById('musicBtn');
-const bgm = { on: false, timer: null, gain: null, step: 0 };
 
 function ensureAudio(){
   audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -789,70 +777,6 @@ function playUnlockSound(){
     [1047, 1319, 1568, 2093].forEach((n, i) => playTone(n, t + i * 0.055, 0.22, 'triangle', 0.052));
   }catch(e){}
 }
-function playBgmNote(freq, start, dur, volume){
-  const ctx = ensureAudio();
-  const g = ctx.createGain();
-  const f = ctx.createBiquadFilter();
-  f.type = 'lowpass';
-  f.frequency.setValueAtTime(1350, start);
-  g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(volume, start + 0.08);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-  const o = ctx.createOscillator();
-  o.type = 'sine';
-  o.frequency.setValueAtTime(freq, start);
-  o.connect(f).connect(g).connect(bgm.gain);
-  o.start(start);
-  o.stop(start + dur + 0.08);
-}
-function scheduleBgmStep(){
-  if(!bgm.on || !bgm.gain) return;
-  const ctx = ensureAudio();
-  const t = ctx.currentTime + 0.05;
-  const chords = [
-    [392, 494, 587, 784],
-    [349, 440, 523, 698],
-    [330, 392, 494, 659],
-    [370, 466, 554, 740]
-  ];
-  const chord = chords[bgm.step % chords.length];
-  chord.forEach((n, i) => playBgmNote(n, t + i * 0.035, 1.25, i === 0 ? 0.028 : 0.02));
-  playBgmNote(chord[3] * 1.5, t + 0.72, 0.34, 0.016);
-  bgm.step++;
-}
-function startBgm(){
-  try{
-    const ctx = ensureAudio();
-    if(bgm.on) return;
-    bgm.gain = ctx.createGain();
-    bgm.gain.gain.setValueAtTime(0.62, ctx.currentTime);
-    bgm.gain.connect(ctx.destination);
-    bgm.on = true;
-    bgm.step = 0;
-    musicBtn.classList.add('on');
-    musicBtn.title = 'BGMを止める';
-    store.set(BGM_KEY, '1');
-    scheduleBgmStep();
-    bgm.timer = setInterval(scheduleBgmStep, 1450);
-  }catch(e){}
-}
-function stopBgm(){
-  if(bgm.timer) clearInterval(bgm.timer);
-  bgm.timer = null;
-  if(bgm.gain){
-    try{
-      const ctx = ensureAudio();
-      bgm.gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-      setTimeout(() => { try{ bgm.gain.disconnect(); }catch(e){} bgm.gain = null; }, 240);
-    }catch(e){ bgm.gain = null; }
-  }
-  bgm.on = false;
-  musicBtn.classList.remove('on');
-  musicBtn.title = 'BGM';
-  store.set(BGM_KEY, '0');
-}
-musicBtn.addEventListener('click', () => bgm.on ? stopBgm() : startBgm());
-if(store.get(BGM_KEY) === '1') musicBtn.title = 'BGMを再開';
 
 const ACHIEVEMENTS = {
   first_pop: { badge:'🎈', title:'はじめてのぱあん！', desc:'最初の風船を割りました' },
